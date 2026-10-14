@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101716">
+  <title>DEAD SIGNAL / 死寂信号 — 隔离区生存挑战</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131c19'/%3E%3Cpath d='M18 14h20l10 10v16L38 50H18z' fill='none' stroke='%23dbfa79' stroke-width='6'/%3E%3Cpath d='M30 25v14' stroke='%23dbfa79' stroke-width='6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script defer src="js/waves.js"></script>
+  <script defer src="js/world.js"></script>
+  <script defer src="js/audio.js"></script>
+  <script defer src="js/player.js"></script>
+  <script defer src="js/effects.js"></script>
+  <script defer src="js/enemies.js"></script>
+  <script defer src="js/squad.js"></script>
+  <script defer src="js/weapons.js"></script>
+  <script defer src="js/ui.js"></script>
+  <script defer src="js/game.js"></script>
+</head>
+<body>
+  <main id="app">
+    <div id="viewport" aria-label="3D 游戏场景"></div>
+    <div class="screen-grain"></div>
+    <div class="vignette"></div>
+
+    <header class="topbar" id="topbar">
+      <a class="brand" href="#" aria-label="Dead Signal 主页"><span class="brand-mark">D<span>╱</span></span><span>DEAD SIGNAL<small>TACTICAL SURVIVAL</small></span></a>
+      <nav class="topnav"><span class="nav-active">单人挑战</span><span class="nav-divider"></span><span>第 01 章 / 隔离区</span></nav>
+      <div class="system-status"><i></i> SYSTEM ONLINE <span class="build-label">BUILD 1.0</span></div>
+    </header>
+
+    <section id="menu" class="menu">
+      <div class="menu-left">
+        <div class="eyebrow"><span class="tiny-cross">+</span> RESTRICTED AREA <span class="eyebrow-line"></span> 07</div>
+        <h1>DEAD<br><span>SIGNAL</span><sup>®</sup></h1>
+        <div class="title-cn"><span></span> 死 寂 信 号</div>
+        <p class="intro">最后一道防线，只剩下你。<br><span>进入隔离区，抵御感染者，活过最后一波。</span></p>
+        <div class="mission-strip">
+          <div><span class="mission-number">01</span><span>战斗区域<small>废弃工业基地</small></span></div>
+          <div><span class="mission-number" id="mission-waves">05</span><span>敌人波次<small>渐进式生存挑战</small></span></div>
+          <div><span class="mission-number">02</span><span>武器配置<small>步枪 / 战术手枪</small></span></div>
+        </div>
+        <div id="load-setup" class="load-setup">
+          <div class="setup-row"><span class="setup-label">作战模式</span><div class="seg" id="setup-mode" role="radiogroup" aria-label="作战模式">
+            <button type="button" class="seg-btn active" data-value="giant" role="radio" aria-checked="true">巨人城 · 30 波防守</button>
+            <button type="button" class="seg-btn" data-value="practice" role="radio" aria-checked="false">隔离区 07 · 5 波练习</button>
+          </div></div>
+          <div class="setup-row" id="setup-difficulty-row"><span class="setup-label">难度</span><div class="seg" id="setup-difficulty" role="radiogroup" aria-label="难度">
+            <button type="button" class="seg-btn active" data-value="normal" role="radio" aria-checked="true">经典·普通</button>
+            <button type="button" class="seg-btn" data-value="hard" role="radio" aria-checked="false">高级</button>
+            <button type="button" class="seg-btn" data-value="nightmare" role="radio" aria-checked="false">噩梦</button>
+          </div></div>
+          <div class="setup-row" id="setup-coins-row"><span class="setup-label">复活币</span>
+            <div class="coins-control"><input id="setup-coins" type="range" min="0" max="99" step="1" value="30" aria-label="复活币数量"><output id="setup-coins-value" for="setup-coins">30</output><span id="setup-hardcore" class="hardcore-tag" hidden>硬核 · 得分 ×1.5</span></div>
+          </div>
+        </div>
+        <button id="start-btn" class="primary-button" disabled><span class="button-cross">⌖</span><span id="start-label">正在建立连接…</span><span class="button-arrow">↗</span></button>
+        <div class="start-note"><span class="key-tiny">↵</span> 点击开始后将锁定鼠标 <span class="note-dot">·</span> ESC 随时暂停</div>
+        <p id="load-error" class="load-error" role="alert" hidden></p>
+      </div>
+      <aside class="scene-label">
+        <div class="scene-label-top"><span class="live-dot"></span> LIVE FEED <span>CAM_007</span></div>
+        <div class="corner-frame"><span class="feed-cross">+</span><div class="location-tag"><small>OPERATION / 001</small><strong>最后的防线</strong><span>SECTOR 07 · QUARANTINE ZONE</span></div><div class="coordinates">35°41′22.8″N<br>139°41′30.2″E</div></div>
+        <div class="scene-label-bottom"><span><i></i> 发现不明生物信号</span><span>威胁等级 <b>HIGH</b></span></div>
+      </aside>
+      <div class="menu-bottom">
+        <div class="control-item"><span class="keys"><kbd>W</kbd><span><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></span><span>移动<small>MOVEMENT</small></span></div>
+        <div class="control-item"><span class="mouse-icon"></span><span>瞄准 / 射击<small>AIM & FIRE</small></span></div>
+        <div class="control-item"><kbd class="wide-key">SPACE</kbd><span>跳跃<small>JUMP</small></span></div>
+        <div class="control-item"><kbd class="wide-key">SHIFT</kbd><span>疾跑<small>SPRINT</small></span></div>
+        <div class="control-item"><kbd>R</kbd><span>换弹<small>RELOAD</small></span></div>
+        <div class="control-item"><span class="inline-keys"><kbd>1</kbd><kbd>2</kbd></span><span>切换武器<small>SWITCH</small></span></div>
+        <button id="sound-btn" class="sound-button" title="切换音效" aria-pressed="false">◖)) <span>音效开启</span></button>
+      </div>
+      <footer class="menu-footer"><span>一座孤城。五波感染者。一次活下去的机会。</span><span>WEBGL EXPERIENCE <i></i> 推荐使用耳机</span></footer>
+    </section>
+
+    <section id="hud" class="hud" hidden>
+      <div class="hud-top-left"><span class="hud-logo">D╱</span><div><b>隔离区 · 07</b><small>OPERATION DEAD SIGNAL</small></div></div>
+      <div class="wave-display"><span id="wave-status">准备作战</span><strong id="wave-value">01 <em>/ 05</em></strong><div class="wave-pips" id="wave-pips"><i></i><i></i><i></i><i></i><i></i></div></div>
+      <div class="hud-top-right"><span>SCORE</span><strong id="score-value">00000</strong><small id="remaining-value">等待敌人</small></div>
+      <div class="minimap-wrap"><div class="minimap-heading"><span>TACTICAL RADAR</span><span>N ↑</span></div><canvas id="minimap" width="180" height="180"></canvas><div class="minimap-footer"><i></i> <span id="radar-count">区域扫描中</span></div></div>
+      <div id="squad-panel" class="squad-panel" hidden><span class="hud-caption">SQUAD · TAB 选中 / Q 指令</span><div id="squad-rows"></div></div>
+      <div id="killfeed" class="killfeed"></div>
+      <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="hitmarker" class="hitmarker">×</div>
+      <div id="damage-numbers" class="damage-numbers"></div>
+      <div id="wave-banner" class="wave-banner" hidden><small id="banner-eyebrow">INCOMING TRANSMISSION</small><strong id="banner-title">第一波</strong><span id="banner-subtitle">守住防线</span></div>
+      <div id="downed" class="downed" hidden><div id="downed-ring" class="downed-ring"><i></i><b id="downed-count">3.0</b></div><div class="downed-copy"><strong>你倒下了</strong><span id="downed-hint">按 E 消耗 1 枚复活币 · 在前线复活点归队</span></div></div>
+      <div id="rally" class="rally-chip" hidden><kbd>F</kbd><span>归队传送</span><b id="rally-count">20</b></div>
+      <div id="toast" class="toast" hidden></div>
+      <div id="reload-indicator" class="reload-indicator" hidden><span>装填中</span><div><i id="reload-progress"></i></div></div>
+      <div class="health-panel"><div class="health-icon">+</div><div><span class="hud-caption">VITAL SIGNS</span><div class="health-value"><strong id="health-value">100</strong><span>/ 100</span></div><div class="health-bar"><i id="health-fill"></i></div></div></div>
+      <div id="coins-panel" class="coins-panel" hidden><span class="coins-icon">◉</span><div><span class="hud-caption">REVIVE COINS</span><strong id="coins-value">30</strong></div></div>
+      <div class="hud-bottom-center"><span><kbd>1</kbd> 步枪</span><span><kbd>2</kbd> 手枪</span><span><kbd>P</kbd> 暂停</span></div>
+      <div class="ammo-panel"><div class="weapon-name"><span id="weapon-name">AR-7 突击步枪</span><span id="weapon-mode">AUTO</span></div><div class="ammo-value"><strong id="ammo-value">30</strong><span>/ <b id="reserve-value">180</b></span></div><div class="ammo-bottom"><span id="weapon-slots">01 — PRIMARY</span><span><kbd>R</kbd> 换弹</span></div></div>
+      <div class="fps" id="fps">60 FPS</div>
+    </section>
+
+    <div id="damage-overlay" class="damage-overlay"></div>
+    <div id="fog-veil" class="fog-veil" hidden></div>
+    <section id="pause" class="modal-overlay" hidden>
+      <div class="modal-panel"><span class="modal-eyebrow">CONNECTION ON HOLD</span><h2>行动暂停<span>TAKE A BREATH.</span></h2><p id="pause-message">战场正在等待。准备好后，继续守住防线。</p><button id="resume-btn" class="primary-button"><span>继续战斗</span><span>↗</span></button><button id="restart-pause-btn" class="secondary-button">重新开始任务</button><div class="modal-controls">WASD 移动 · 鼠标瞄准 · 左键射击<br>空格跳跃 · Shift 疾跑 · R 换弹 · 1 / 2 切枪</div></div>
+    </section>
+    <section id="result" class="modal-overlay" hidden>
+      <div class="modal-panel result-panel"><span class="modal-eyebrow" id="result-eyebrow">MISSION COMPLETE</span><h2 id="result-title">防线已守住<span>YOU MADE IT.</span></h2><p id="result-description">信号重新接通。隔离区暂时安全了。</p><div class="result-stats"><div><small>最终得分</small><strong id="result-score">0</strong></div><div><small>完成波次</small><strong id="result-wave">5 / 5</strong></div><div><small>击杀 / 爆头击杀</small><strong id="result-kills">0 / 0</strong></div></div><button id="restart-btn" class="primary-button"><span>再次执行任务</span><span>↗</span></button><button id="menu-btn" class="secondary-button">返回指挥中心</button></div>
+    </section>
+    <div id="mobile-notice" class="mobile-notice" hidden><b>需要键盘与鼠标</b><span>请在电脑浏览器打开，获得完整的第一人称体验。</span><button id="mobile-dismiss">继续查看场景</button></div>
+    <div id="boot" class="boot"><span class="boot-mark">D╱</span><span>INITIALIZING SECTOR 07</span><div></div></div>
+  </main>
+  <noscript>本游戏需要启用 JavaScript，并使用支持 WebGL 的电脑浏览器。</noscript>
+</body>
+</html>

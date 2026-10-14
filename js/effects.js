@@ -1,0 +1,294 @@
+(function () {
+  'use strict';
+  const DZ = window.DZ = window.DZ || {};
+  if (!window.THREE) return;
+  const T = THREE;
+
+  DZ.Effects = class Effects {
+    constructor(game) {
+      this.game = game;
+      this.drops = [];
+      this.time = 0;
+      this.particles = Array.from({ length: 180 }, () => ({ p: new T.Vector3(), v: new T.Vector3(), life: 0, maxLife: 1, size: 0.03, gravity: 8 }));
+      this.cursor = 0;
+      this.dummy = new T.Object3D();
+      this.mesh = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial(), this.particles.length);
+      this.mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      this.mesh.frustumCulled = false;
+      for (let i = 0; i < this.particles.length; i++) {
+        this.dummy.scale.setScalar(0); this.dummy.updateMatrix();
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
+        this.mesh.setColorAt(i, new T.Color(0xe3b471));
+      }
+      game.world.scene.add(this.mesh);
+      this.traces = Array.from({ length: 14 }, () => {
+        const geometry = new T.BufferGeometry();
+        geometry.setAttribute('position', new T.BufferAttribute(new Float32Array(6), 3));
+        const line = new T.Line(geometry, new T.LineBasicMaterial({ color: 0xffe3a4, transparent: true, opacity: 0.7, depthWrite: false }));
+        line.visible = false; line.frustumCulled = false;
+        game.world.scene.add(line);
+        return { line, life: 0 };
+      });
+      this.traceCursor = 0;
+      this.dropBox = new T.BoxGeometry(0.57, 0.4, 0.4);
+      this.symbolBox = new T.BoxGeometry(1, 1, 1);
+      this.dropRing = new T.TorusGeometry(0.52, 0.016, 4, 28);
+      this.dropMaterials = {
+        health: new T.MeshStandardMaterial({ color: 0x568a64, emissive: 0x214c32, roughness: 0.65 }),
+        ammo: new T.MeshStandardMaterial({ color: 0xa68646, emissive: 0x443719, roughness: 0.65 })
+      };
+      this.symbolMaterial = new T.MeshBasicMaterial({ color: 0xdafa98 });
+      // M3 雾散体黑雾：半透明体积团，规则先行（fogDensity 供视野/小地图/队友命中判定）。
+      this.fogs = [];
+      this.fogLimit = 12;
+      this.fogShell = new T.IcosahedronGeometry(1, 2);
+      this.fogDisc = new T.CircleGeometry(1, 28);
+      this.blows = [];
+      this.blowRing = new T.RingGeometry(0.86, 1, 32);
+      this.warns = [];
+    }
+
+    fog(position, radius, life) {
+      if (this.fogs.length >= this.fogLimit) this.removeFog(0);
+      const root = new T.Group();
+      const base = this.game.world.floorAt(position.x, position.z);
+      root.position.set(position.x, base, position.z);
+      const material = new T.MeshBasicMaterial({ color: 0x0d1211, transparent: true, opacity: 0, depthWrite: false });
+      const body = new T.Mesh(this.fogShell, material);
+      body.position.y = radius * 0.42;
+      body.scale.set(radius * 0.78, radius * 0.5, radius * 0.78);
+      root.add(body);
+      for (const [offset, size] of [[0.28, 0.62], [-0.3, 0.5]]) {
+        const puff = new T.Mesh(this.fogShell, material);
+        puff.position.set(radius * offset, radius * 0.52, radius * -offset * 0.7);
+        puff.scale.setScalar(radius * size);
+        root.add(puff);
+      }
+      const skirt = new T.Mesh(this.fogDisc, material);
+      skirt.rotation.x = -Math.PI / 2;
+      skirt.position.y = 0.04;
+      skirt.scale.setScalar(radius);
+      root.add(skirt);
+      this.game.world.scene.add(root);
+      this.fogs.push({ root, material, position: new T.Vector3(position.x, 0, position.z), radius, life, maxLife: life });
+    }
+
+    removeFog(index) {
+      const fog = this.fogs[index];
+      this.game.world.scene.remove(fog.root);
+      fog.material.dispose();
+      this.fogs.splice(index, 1);
+    }
+
+    // 雾浓度 0..1：用于玩家视野遮挡、小地图失效与队友命中减伤。
+    fogDensity(position) {
+      let best = 0;
+      for (const fog of this.fogs) {
+        const fade = Math.min(1, (fog.maxLife - fog.life) / 0.6, fog.life / 1);
+        if (fade <= 0) continue;
+        const d = Math.hypot(position.x - fog.position.x, position.z - fog.position.z);
+        if (d >= fog.radius) continue;
+        best = Math.max(best, (1 - (d / fog.radius) ** 3) * fade);
+      }
+      return best;
+    }
+
+    boom(position, radius, color = 0xffb257, life = 0.45) {
+      const base = this.game.world.floorAt(position.x, position.z);
+      const mesh = new T.Mesh(this.blowRing, new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: T.DoubleSide, depthWrite: false }));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(position.x, base + 0.06, position.z);
+      mesh.scale.setScalar(radius * 0.3);
+      this.game.world.scene.add(mesh);
+      this.blows.push({ mesh, life, maxLife: life, radius });
+      const fire = new T.Vector3(position.x, base + 0.5, position.z);
+      for (let i = 0; i < 26; i++) {
+        const angle = Math.random() * Math.PI * 2, speed = 2 + Math.random() * radius * 2.2;
+        this.particle(fire, new T.Vector3(Math.cos(angle) * speed, 3.4 + Math.random() * 3.5, Math.sin(angle) * speed),
+          i % 3 ? 0xff8a3c : 0xffd37a, 0.06 + Math.random() * 0.07, 0.4 + Math.random() * 0.4);
+      }
+      for (let i = 0; i < 10; i++) {
+        this.particle(fire, new T.Vector3((Math.random() - 0.5) * 3, 1.2 + Math.random() * 2, (Math.random() - 0.5) * 3),
+          0x4a423b, 0.09, 0.8, 3.2);
+      }
+    }
+
+    removeBlow(index) {
+      const blow = this.blows[index];
+      this.game.world.scene.remove(blow.mesh);
+      blow.mesh.material.dispose();
+      this.blows.splice(index, 1);
+    }
+
+    // BOSS 砸地红圈预警：贴地圆环 + 半透明填充，时长由调用方与技能前摇一致。
+    warn(position, radius, duration) {
+      const material = new T.MeshBasicMaterial({ color: 0xd2352a, transparent: true, opacity: 0.24, side: T.DoubleSide, depthWrite: false });
+      const root = new T.Group();
+      root.position.set(position.x, this.game.world.floorAt(position.x, position.z) + 0.05, position.z);
+      const fill = new T.Mesh(this.fogDisc, material);
+      fill.rotation.x = -Math.PI / 2;
+      const edge = new T.Mesh(this.blowRing, material);
+      edge.rotation.x = -Math.PI / 2;
+      edge.position.y = 0.012;
+      root.add(fill, edge);
+      root.scale.setScalar(radius);
+      this.game.world.scene.add(root);
+      this.warns.push({ root, material, life: duration, maxLife: duration });
+    }
+
+    removeWarn(index) {
+      const warn = this.warns[index];
+      this.game.world.scene.remove(warn.root);
+      warn.material.dispose();
+      this.warns.splice(index, 1);
+    }
+
+    particle(position, velocity, color, size, life, gravity = 8) {
+      const index = this.cursor++ % this.particles.length;
+      const p = this.particles[index];
+      p.p.copy(position); p.v.copy(velocity); p.life = p.maxLife = life;
+      p.size = size; p.gravity = gravity;
+      this.mesh.setColorAt(index, new T.Color(color));
+      this.mesh.instanceColor.needsUpdate = true;
+    }
+
+    burst(position, type = 'spark', amount = 8) {
+      const palette = {
+        blood: [0x9d4334, 0xc77e4a],
+        spark: [0xffcc73, 0xffefa4],
+        void: [0xc18ff5, 0x6f4fa0]
+      };
+      const colors = palette[type] || palette.spark;
+      const chunky = type === 'blood';
+      for (let i = 0; i < amount; i++) {
+        const v = new T.Vector3((Math.random() - 0.5) * 4, Math.random() * 3.5, (Math.random() - 0.5) * 4);
+        this.particle(position, v, i % 2 ? colors[0] : colors[1], chunky ? 0.045 + Math.random() * 0.06 : 0.02, 0.25 + Math.random() * 0.35);
+      }
+    }
+
+    casing(camera) {
+      const position = new T.Vector3(0.3, -0.15, -0.48).applyMatrix4(camera.matrixWorld);
+      const velocity = new T.Vector3(1.5 + Math.random(), 1.6, 0.7).applyQuaternion(camera.quaternion);
+      this.particle(position, velocity, 0xccab62, 0.033, 1.15, 9);
+    }
+
+    tracer(start, end) {
+      const trace = this.traces[this.traceCursor++ % this.traces.length];
+      const a = trace.line.geometry.attributes.position;
+      a.setXYZ(0, start.x, start.y, start.z); a.setXYZ(1, end.x, end.y, end.z);
+      a.needsUpdate = true;
+      trace.life = 0.055;
+      trace.line.visible = true;
+      trace.line.material.opacity = 0.65;
+    }
+
+    drop(position, type) {
+      if (this.drops.length >= 12) this.removeDrop(0);
+      const root = new T.Group();
+      const base = this.game.world.floorAt(position.x, position.z);
+      root.position.set(position.x, base + 0.48, position.z);
+      const box = new T.Mesh(this.dropBox, this.dropMaterials[type]);
+      root.add(box);
+      const symbol = (x, y, z, w, h, d) => {
+        const part = new T.Mesh(this.symbolBox, this.symbolMaterial);
+        part.position.set(x, y, z); part.scale.set(w, h, d); root.add(part);
+      };
+      if (type === 'health') {
+        symbol(0, 0, 0.211, 0.26, 0.075, 0.018);
+        symbol(0, 0, 0.211, 0.075, 0.26, 0.02);
+      } else {
+        for (const x of [-0.13, 0, 0.13]) symbol(x, 0, 0.211, 0.055, 0.24, 0.018);
+      }
+      const ring = new T.Mesh(this.dropRing, this.symbolMaterial);
+      ring.rotation.x = -Math.PI / 2; ring.position.y = -0.35;
+      root.add(ring);
+      this.game.world.scene.add(root);
+      this.drops.push({ root, type, life: 35, base });
+    }
+
+    removeDrop(index) {
+      this.game.world.scene.remove(this.drops[index].root);
+      this.drops.splice(index, 1);
+    }
+
+    update(dt) {
+      this.time += dt;
+      for (let i = 0; i < this.particles.length; ++i) {
+        const p = this.particles[i];
+        if (p.life > 0) {
+          p.life = Math.max(0, p.life - dt);
+          p.v.y -= p.gravity * dt;
+          p.p.addScaledVector(p.v, dt);
+          const floor = this.game.world.floorAt(p.p.x, p.p.z) + 0.025;
+          if (p.p.y < floor) { p.p.y = floor; p.v.y *= -0.28; p.v.x *= 0.7; p.v.z *= 0.7; }
+          this.dummy.position.copy(p.p);
+          this.dummy.rotation.set(p.life * 8, p.life * 4, 0);
+          this.dummy.scale.setScalar(p.size * Math.min(1, p.life * 5));
+        } else this.dummy.scale.setScalar(0);
+        this.dummy.updateMatrix();
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
+      }
+      this.mesh.instanceMatrix.needsUpdate = true;
+      for (const t of this.traces) {
+        t.life -= dt;
+        t.line.visible = t.life > 0;
+        t.line.material.opacity = Math.max(0, t.life * 12);
+      }
+      for (let i = this.fogs.length - 1; i >= 0; --i) {
+        const fog = this.fogs[i];
+        fog.life -= dt;
+        if (fog.life <= 0) { this.removeFog(i); continue; }
+        const fade = Math.min(1, (fog.maxLife - fog.life) / 0.6, fog.life / 1);
+        fog.material.opacity = 0.82 * fade;
+        const breathe = 1 + Math.sin(this.time * 1.6 + i) * 0.03;
+        fog.root.rotation.y += dt * 0.22;
+        fog.root.scale.set(breathe, 1, breathe);
+      }
+      for (let i = this.blows.length - 1; i >= 0; --i) {
+        const blow = this.blows[i];
+        blow.life -= dt;
+        if (blow.life <= 0) { this.removeBlow(i); continue; }
+        const t = 1 - blow.life / blow.maxLife;
+        blow.mesh.scale.setScalar(blow.radius * (0.3 + t * 1.1));
+        blow.mesh.material.opacity = 0.85 * (1 - t);
+      }
+      for (let i = this.warns.length - 1; i >= 0; --i) {
+        const warn = this.warns[i];
+        warn.life -= dt;
+        if (warn.life <= 0) { this.removeWarn(i); continue; }
+        const t = 1 - warn.life / warn.maxLife;
+        warn.material.opacity = 0.2 + t * 0.3 + Math.sin(this.time * 16) * 0.05;
+      }
+      const player = this.game.player;
+      for (let i = this.drops.length - 1; i >= 0; --i) {
+        const drop = this.drops[i];
+        drop.life -= dt;
+        drop.root.rotation.y += dt * 1.25;
+        drop.root.position.y = drop.base + 0.47 + Math.sin(this.time * 3 + i) * 0.1;
+        drop.root.visible = drop.life > 5 || Math.sin(this.time * 12) > 0;
+        if (drop.life <= 0) { this.removeDrop(i); continue; }
+        const d = Math.hypot(player.position.x - drop.root.position.x, player.position.z - drop.root.position.z);
+        // 补给跟着所在顶面浮动：脚底与补给不同层的玩家够不到。
+        if (d > 1.45 || Math.abs(player.position.y - drop.base) > 1.2) continue;
+        if (drop.type === 'health' && player.health === 100) continue;
+        if (drop.type === 'health') { player.heal(30); this.game.ui.toast('医疗补给 · 生命值 +30'); }
+        else { this.game.weapons.addAmmo(60, 24); this.game.ui.toast('弹药补给 · 步枪 +60 / 手枪 +24'); }
+        this.game.audio.pickup();
+        this.removeDrop(i);
+      }
+    }
+
+    reset() {
+      while (this.drops.length) this.removeDrop(0);
+      while (this.fogs.length) this.removeFog(0);
+      while (this.blows.length) this.removeBlow(0);
+      while (this.warns.length) this.removeWarn(0);
+      for (const p of this.particles) p.life = 0;
+      for (const t of this.traces) { t.life = 0; t.line.visible = false; }
+      for (let i = 0; i < this.particles.length; i++) {
+        this.dummy.scale.setScalar(0); this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix);
+      }
+      this.mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+})();
