@@ -6,6 +6,8 @@
 
   // 脚下一步内允许抬升的高度：中央平台（0.35m）可以直接走上去，车厢/甲板（3.2m）只能靠斜坡上。
   const STEP_UP = 0.42;
+  // 导航格子的通行半径：地面层与友方层共用，保证没有高度面时两层完全等价。
+  const NAV_RADIUS = 0.56;
 
   DZ.World = class World {
     defMaterial(color, roughness = 0.85, metalness = 0.1) {
@@ -71,6 +73,7 @@
       if (key === 'giant') this.buildGiant(bag); else this.buildPractice(bag);
       this.bounds = bag.bounds;
       bag.nav = this.buildNav();
+      bag.navAlly = this.buildAllyNav();
       bag.group.updateMatrixWorld(true);
       this.bag = null;
       this.maps.set(key, bag);
@@ -91,12 +94,14 @@
       this.spawnGroups = bag.spawnGroups;
       this.revivePoints = bag.revivePoints;
       this.defensePost = bag.defensePost;
+      this.bossArena = bag.bossArena;
       this.squadPosts = bag.squadPosts;
       this.squadStart = bag.squadStart;
       this.playerStart = bag.playerStart;
       this.menuDecor = bag.menuDecor;
       this.bounds = bag.bounds;
       this.nav = bag.nav;
+      this.navAlly = bag.navAlly;
       this.dust = bag.dust;
       this.scene.background = new T.Color(bag.background);
       this.scene.fog = new T.FogExp2(bag.background, bag.fogDensity);
@@ -221,10 +226,14 @@
         const dz = z - Math.max(o.minZ, Math.min(o.maxZ, z));
         if (dx * dx + dz * dz < radius * radius) return false;
       }
+      // 脚底先落在目标顶面上：脚下高度只取 max(来源, 目标)，斜坡每步只升高一点点，
+      // 若按来源高度限位就会被自己的坡度当成墙。
+      const here = this.floorAt(x, z);
+      if (here > fromY + STEP_UP) return false;
       // 四周采样：脚底要被高出台阶限位的顶面顶住，就当撞上了墙/车厢侧壁。
       const k = radius * 0.72;
-      const limit = fromY + STEP_UP;
-      for (const [sx, sz] of [[0, 0], [k, 0], [-k, 0], [0, k], [0, -k]]) {
+      const limit = Math.max(fromY, here) + STEP_UP;
+      for (const [sx, sz] of [[k, 0], [-k, 0], [0, k], [0, -k]]) {
         if (this.floorAt(x + sx, z + sz) > limit) return false;
       }
       return true;
@@ -266,36 +275,71 @@
       const h = Math.round(b.maxZ - b.minZ);
       const blocked = new Uint8Array(w * h);
       for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
-        blocked[z * w + x] = this.canStand(b.minX + x + 0.5, b.minZ + z + 0.5, 0.56) ? 0 : 1;
+        blocked[z * w + x] = this.canStand(b.minX + x + 0.5, b.minZ + z + 0.5, NAV_RADIUS) ? 0 : 1;
       }
       // 仇恨系统需要多个目标流场（玩家 + 队友群 + 队友各自的目标点），按 id 缓存、各自 0.3s 节流。
       return { w, h, minX: b.minX, minZ: b.minZ, blocked, queue: new Int16Array(w * h) };
     }
 
+    // 友方导航层：允许沿台阶爬升（斜坡→装载甲板→车顶），但绝不许跨越悬崖。
+    // 怪物仍走 buildNav 的地面层，高台对它们依旧是墙。
+    buildAllyNav() {
+      const b = this.bounds;
+      const w = Math.round(b.maxX - b.minX), h = Math.round(b.maxZ - b.minZ), size = w * h;
+      const open = new Uint8Array(size), floors = new Float32Array(size);
+      const reachable = new Uint8Array(size), queue = new Int16Array(size);
+      let read = 0, write = 0;
+      for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
+        const i = z * w + x;
+        const cx = b.minX + x + 0.5, cz = b.minZ + z + 0.5;
+        const y = this.floorAt(cx, cz);
+        floors[i] = y;
+        // 通行半径与地面层一致（0.56）：没有高度面的旧图上两层必须完全等价。
+        if (!this.canStand(cx, cz, NAV_RADIUS, y)) continue;
+        open[i] = 1;
+        // 只有地面层可达的格子作为源点，高台必须靠台阶链连出来。
+        if (this.canStand(cx, cz, NAV_RADIUS, 0)) { reachable[i] = 1; queue[write++] = i; }
+      }
+      while (read < write) {
+        const i = queue[read++], x = i % w, z = Math.floor(i / w);
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, nz = z + dz;
+          if (nx < 0 || nx >= w || nz < 0 || nz >= h) continue;
+          const ni = nz * w + nx;
+          if (!open[ni] || reachable[ni] || Math.abs(floors[ni] - floors[i]) > STEP_UP) continue;
+          reachable[ni] = 1;
+          queue[write++] = ni;
+        }
+      }
+      const blocked = new Uint8Array(size);
+      for (let i = 0; i < size; i++) blocked[i] = reachable[i] ? 0 : 1;
+      // 把高度与边规则带到运行时：nextStep 也要按同一套台阶限位挑格子，否则单位会顶着悬崖流场走。
+      return { w, h, minX: b.minX, minZ: b.minZ, blocked, queue: new Int16Array(size), floors, maxStep: STEP_UP };
+    }
+
     resetNavigation() { this.fields = new Map(); }
 
-    field(id, create = true) {
+    // 流场绑定各自的导航层：怪物用 only-ground 的 nav，友方与冲顶单位用 navAlly。
+    field(id, grid = this.nav, create = true) {
       let f = this.fields.get(id);
-      const size = this.nav.w * this.nav.h;
       if (!f && create) {
-        f = { dist: new Int16Array(size).fill(-1), clock: 0, cell: -1 };
+        f = { grid, dist: new Int16Array(grid.w * grid.h).fill(-1), clock: 0, cell: -1 };
         this.fields.set(id, f);
       }
       return f;
     }
 
-    cell(position) {
-      const nav = this.nav;
+    cell(position, nav = this.nav) {
       const x = T.MathUtils.clamp(Math.floor(position.x - nav.minX), 0, nav.w - 1);
       const z = T.MathUtils.clamp(Math.floor(position.z - nav.minZ), 0, nav.h - 1);
       return z * nav.w + x;
     }
 
-    updateField(id, position, dt) {
-      const nav = this.nav;
-      const f = this.field(id);
+    updateField(id, position, dt, grid = this.nav) {
+      const nav = grid;
+      const f = this.field(id, nav);
       f.clock -= dt;
-      const target = this.cell(position);
+      const target = this.cell(position, nav);
       if (f.clock > 0 && target === f.cell) return;
       f.clock = 0.3;
       f.cell = target;
@@ -321,6 +365,8 @@
           if (nx < 0 || nx >= nav.w || nz < 0 || nz >= nav.h) continue;
           const ni = nz * nav.w + nx;
           if (nav.blocked[ni] || distances[ni] >= 0) continue;
+          // 友方层带高度：流场只能沿 buildAllyNav 认可的台阶边扩散，否则梯度会把单位推向悬崖。
+          if (nav.floors && Math.abs(nav.floors[ni] - nav.floors[i]) > nav.maxStep) continue;
           distances[ni] = distances[i] + 1;
           nav.queue[write++] = ni;
         }
@@ -328,11 +374,11 @@
     }
 
     nextStep(id, position) {
-      const nav = this.nav;
-      const f = this.field(id);
+      const f = this.fields.get(id);
       if (!f) return { x: position.x, z: position.z };
+      const nav = f.grid || this.nav;
       const distances = f.dist;
-      const cell = this.cell(position), x = cell % nav.w, z = Math.floor(cell / nav.w);
+      const cell = this.cell(position, nav), x = cell % nav.w, z = Math.floor(cell / nav.w);
       let best = cell, score = distances[cell];
       if (score < 0) score = 32767;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -340,6 +386,8 @@
         if (nx < 0 || nx >= nav.w || nz < 0 || nz >= nav.h) continue;
         const index = nz * nav.w + nx;
         if (distances[index] < 0) continue;
+        // 梯度也要守台阶限位：隔壁格子可能绕斜坡才够得着，直接走过去就是撞悬崖。
+        if (nav.floors && Math.abs(nav.floors[index] - nav.floors[cell]) > nav.maxStep) continue;
         if (distances[index] < score) { best = index; score = distances[index]; }
       }
       return { x: nav.minX + best % nav.w + 0.5, z: nav.minZ + Math.floor(best / nav.w) + 0.5 };
@@ -583,17 +631,21 @@
         西: [new T.Vector3(-21, 0, -32), new T.Vector3(-21, 0, -22)],
         东: [new T.Vector3(21, 0, -32), new T.Vector3(21, 0, -22)],
         北: [new T.Vector3(-4, 0, -45), new T.Vector3(4, 0, -45)],
-        顶: [new T.Vector3(-6.5, 0, 25.5), new T.Vector3(6.5, 0, 25.5)]
+        顶: [new T.Vector3(-6.5, 0, 25.5), new T.Vector3(6.5, 0, 25.5)],
+        // 巨型泰坦战场（南段开阔区）：两个刷点都在战场范围内，且离火车/掩体 ≥1.3m。
+        南: [new T.Vector3(-6, 0, 30), new T.Vector3(6, 0, 30)]
       };
-      bag.spawnPoints = ['西', '东', '北', '顶'].reduce((all, g) => all.concat(bag.spawnGroups[g]), []);
+      bag.spawnPoints = ['西', '东', '北', '顶', '南'].reduce((all, g) => all.concat(bag.spawnGroups[g]), []);
       bag.revivePoints = {
         A: [new T.Vector3(-7, 0, 38), new T.Vector3(7, 0, 38)],
         B: [new T.Vector3(-3.5, 0, -21.5), new T.Vector3(3.5, 0, -21.5)],
         C: [new T.Vector3(-2.5, 0, 22), new T.Vector3(2.5, 0, 22)]
       };
       bag.defensePost = new T.Vector3(0, 0.35, -26);
-      // 尖刀守西通道口、盾卫守中央平台南缘、游骑兵守火车南端斜坡口东侧（M4b 高层导航后才上顶）。
-      bag.squadPosts = [new T.Vector3(-20.5, 0, -26), new T.Vector3(-3, 0.35, -23), new T.Vector3(11, 0, 20)];
+      // §7 巨型泰坦决战战场：火车南段开阔区，南北正好 30m（含斜坡脚下与出发区前沿）。
+      bag.bossArena = { minX: -22, maxX: 22, minZ: 14, maxZ: 44 };
+      // 尖刀守西通道口、盾卫守中央平台南缘、游骑兵守火车车顶（§4 默认岗位，需要 navAlly 才上得去）。
+      bag.squadPosts = [new T.Vector3(-20.5, 0, -26), new T.Vector3(-3, 0.35, -23), new T.Vector3(0, 3.2, -2)];
 
       this.buildGiantLights();
       this.groundPlane(240, 34);
@@ -614,17 +666,20 @@
       const sun = new T.DirectionalLight(0xffe3a8, 3.05);
       sun.position.set(-34, 52, 28);
       sun.castShadow = true;
-      Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 66, bottom: -66, near: 1, far: 150 });
+      // 96m 纵深 + 侧向仓库：阴影取景框按整张长图放宽，南北两端才都有落地阴影。
+      Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 74, bottom: -74, near: 1, far: 160 });
       sun.shadow.mapSize.set(2048, 2048);
       sun.shadow.bias = -0.0007;
       sun.shadow.normalBias = 0.07;
       this.group.add(sun);
-      for (const [x, z, color, intensity, distance] of [
-        [0, -45, 0xd2ff88, 26, 15], [-23.6, -29, 0xd2ff88, 20, 13], [23.6, -29, 0xd2ff88, 20, 13],
-        [0, -28, 0xffd9a0, 24, 20], [0, 36, 0xa8d8ff, 20, 18]
+      for (const [x, y, z, color, intensity, distance] of [
+        [0, 4.6, -45, 0xd2ff88, 26, 15], [-23.6, 4.6, -29, 0xd2ff88, 20, 13], [23.6, 4.6, -29, 0xd2ff88, 20, 13],
+        [0, 4.6, -28, 0xffd9a0, 24, 20], [0, 4.6, 36, 0xa8d8ff, 20, 18],
+        // 火车南端作业灯：斜坡与装载甲板是冲顶/上顶的主战场，需要独立的暖光读清高低差。
+        [0, 7.2, 18, 0xffcf92, 30, 26]
       ]) {
         const light = new T.PointLight(color, intensity, distance, 2);
-        light.position.set(x, 4.6, z);
+        light.position.set(x, y, z);
         this.group.add(light);
       }
       // 地面标线：两条通道中心线 + 平台与出发区的停车位框。

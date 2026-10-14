@@ -277,8 +277,9 @@
       // 目标点只存 XZ，支撑高度按当前地图顶面现算，岗位在中央平台（0.35m）上也不会贴地。
       m.goal.y = world.floorAt(m.goal.x, m.goal.z);
       if (d > 0.45) {
+        // 友方走 navAlly：斜坡与车顶对队友开放，怪物仍被地面层挡在高台之外。
         const fieldId = 'g' + m.index;
-        world.updateField(fieldId, m.goal, dt);
+        world.updateField(fieldId, m.goal, dt, world.navAlly);
         const step = world.segmentClear(p, m.goal, 0.5) ? m.goal : world.nextStep(fieldId, p);
         const sx = step.x - p.x, sz = step.z - p.z;
         const sl = Math.hypot(sx, sz);
@@ -440,12 +441,12 @@
         if (d < bestD) { bestD = d; best = m; }
       }
       if (!best) return null;
-      // 落点落在队友朝玩家一侧 1.3m 处，避免与队友重叠。
+      // 落点落在队友朝玩家一侧 1.3m 处，避免与队友重叠；高度跟随队友所在顶面（车顶归队要落上车顶）。
       const p = best.root.position;
       const dx = p.x - position.x, dz = p.z - position.z;
       const d = Math.hypot(dx, dz);
-      if (d < 0.01) return p.clone().add(new T.Vector3(1.3, 0, 0));
-      return new T.Vector3(p.x - dx / d * 1.3, 0, p.z - dz / d * 1.3);
+      if (d < 0.01) return new T.Vector3(p.x + 1.3, p.y, p.z);
+      return new T.Vector3(p.x - dx / d * 1.3, p.y, p.z - dz / d * 1.3);
     }
 
     // 波间补给：队友弹匣与备弹回满（玩家治疗/加弹在 game.update 波末结算）。

@@ -59,7 +59,8 @@
   function defaultMove(e, ctx) {
     const p = e.root.position, t = ctx.target.position;
     if (ctx.distance <= e.stopAt && e.direct) return [0, 0];
-    const step = e.direct ? t : ctx.world.nextStep(e.targetId, p);
+    // 冲顶自爆体改用友方导航层的同名流场（'e'+目标 id），地面层里没有通往车顶的路。
+    const step = e.direct ? t : ctx.world.nextStep(e.topRush ? 'e' + e.targetId : e.targetId, p);
     const tx = step.x - p.x, tz = step.z - p.z;
     const len = Math.hypot(tx, tz);
     if (len < 0.02) return [0, 0];
@@ -143,6 +144,8 @@
         const p = e.root.position;
         for (const u of ctx.units) {
           if (sk.dash.hits.has(u.id)) continue;
+          // 冲刺同样只撞同一层的单位：车顶边缘的玩家不该被地面车厢板上的泰坦撞穿。
+          if (Math.abs(u.position.y - p.y) > 2.2) continue;
           if (Math.hypot(u.position.x - p.x, u.position.z - p.z) > e.radius + u.radius + 0.3) continue;
           sk.dash.hits.add(u.id);
           u.knockback(u.position.x - p.x, u.position.z - p.z, e.def.charge.knockback, 0.35);
@@ -265,7 +268,9 @@
       }
     },
     bomber: {
-      radius: 0.5, targetRule: 'nearest', spawnPoints: GROUND_GROUPS.concat(['顶']),
+      radius: 0.5, targetRule: 'nearest', spawnPoints: GROUND_GROUPS.concat(['顶', '南']),
+      // 只有从"顶"组投放的个体才启用冲顶：改走友方导航层、优先咬高层目标（§3 车顶争夺）。
+      topRush: true,
       melee: { cooldown: 1.1, windup: 0.34 },
       fuse: { range: 2.5, time: 0.45 },
       blast: { radius: 3, damage: 60 },
@@ -274,6 +279,8 @@
         think(e, ctx) {
           if (e.fuse <= 0) {
             if (ctx.distance > e.def.fuse.range) return;
+            // 冲顶个体要炸的是车顶，隔着车厢底板起爆只会炸空，继续爬坡。
+            if (e.topRush && ctx.target.position.y - e.root.position.y > 1.6) return;
             e.fuse = e.def.fuse.time;
             return;
           }
@@ -367,7 +374,9 @@
       behavior: BOSS_BEHAVIOR
     },
     megaTitan: {
-      radius: 0.44, targetRule: 'threat', spawnPoints: GROUND_GROUPS,
+      radius: 0.44, targetRule: 'threat', spawnPoints: ['南'],
+      // §7 决战战场限制在火车南段开阔区：仅从"南"组刷出时生效，测试直刷不受限。
+      arenaGroup: '南',
       melee: { cooldown: 2, windup: 0.5 },
       charge: { cooldown: 12, windup: 0.8, speed: 14, distance: 16, damage: 50, knockback: 3, min: 4, max: 30, turn: 0.4 },
       slam: { cooldown: 8, windup: 0.9, radius: 5, damage: 50, repeats: 2, gap: 0.5 },
@@ -542,6 +551,9 @@
         knock: new T.Vector3(), fast: stats.fast, type: stats.type, boss: Boolean(stats.boss),
         targetId: 0, aggro: {}, def, behavior: def.behavior || {}, melee: def.melee,
         dashCd: 0, dash: null, fuse: 0, fogCd: def.fog ? def.fog.every : 0, blinkCd: 0,
+        // 冲顶自爆（'顶'组投放）改用友方导航层；战场限制只给从'南'组刷出的巨型泰坦。
+        topRush: Boolean(def.topRush && entry && entry.group === '顶'),
+        arena: def.arenaGroup && entry && entry.group === def.arenaGroup ? this.game.world.bossArena : null,
         // BOSS 技能阶段机；开局给 3s/5s 缓冲，避免刷新瞬间糊脸。
         rage: false, skill: def.boss ? {
           phase: 'idle', wind: 0, dash: null, chargeCd: 3, slamCd: 5, slamsLeft: 0,
@@ -678,9 +690,11 @@
         const d = Math.hypot(u.position.x - p.x, u.position.z - p.z);
         const mem = enemy.aggro[u.id];
         const memory = mem ? mem.value * Math.max(0, 1 - (now - mem.at) / 5) : 0;
-        const score = rule === 'nearest' ? -d
+        let score = rule === 'nearest' ? -d
           : rule === 'threat' ? memory + d * 0.01
             : (d < 15 ? (15 - d) * 2 : 0) + memory + (u.isPlayer ? 15 : 0);
+        // 冲顶自爆体优先咬高层目标：同层加成足以盖过十几米的地面队友。
+        if (enemy.topRush && u.position.y > 1.2) score += 40;
         if (score > bestScore) { bestScore = score; best = u; }
       }
       enemy.targetId = best.id;
@@ -785,14 +799,21 @@
       const game = this.game, world = game.world;
       const units = DZ.allyUnits(game);
       for (const u of units) world.updateField(u.id, u.position, dt);
+      // 冲顶自爆体另开一张友方层流场（id 前缀 'e'），否则地面层里没有通往车顶的格子。
+      for (const e of this.list) {
+        if (!e.topRush || e.dead) continue;
+        world.updateField('e' + e.targetId, this.unitById(units, e.targetId).position, dt, world.navAlly);
+      }
       const squad = game.squad;
       const runner = this.runner;
       runner.tick(dt);
       if (runner.cfg && runner.cfg.boss && !runner.bossSpawned) {
         runner.bossSpawned = true;
         const type = DZ.WAVES.TYPES[runner.cfg.bossType];
-        const entry = { type: runner.cfg.bossType, bossScale: type.scale, summon: runner.cfg.summon };
-        this.spawnAt(this.groupPoint((runner.cfg.groups || ['北'])[0], this.defOf(entry)), entry);
+        const group = (runner.cfg.groups || ['北'])[0];
+        // entry 带上投放组：冲顶自爆与巨型泰坦战场都按组启用。
+        const entry = { type: runner.cfg.bossType, bossScale: type.scale, summon: runner.cfg.summon, group };
+        this.spawnAt(this.groupPoint(group, this.defOf(entry)), entry);
       }
       this.spawnTimer -= dt;
       const cap = runner.dataDriven && runner.cfg ? (runner.cfg.maxAlive || 30) : 30;
@@ -865,7 +886,13 @@
           }
         }
         // 地面单位规则：脚底基准恒为 0，斜坡/车顶的 3.2m 顶面对怪物是墙（§5 高台安全）。
-        world.move(p, (mx + e.knock.x) * dt, (mz + e.knock.z) * dt, e.radius, 0);
+        // 冲顶自爆体是唯一的例外：以自己的脚底为基准，才沿得上去斜坡。
+        world.move(p, (mx + e.knock.x) * dt, (mz + e.knock.z) * dt, e.radius, e.topRush ? p.y : 0);
+        if (e.arena) {
+          // §7 决战战场：巨型泰坦被压在火车南段 30m 内，越界就贴边滑行（不传送、不打断技能）。
+          p.x = T.MathUtils.clamp(p.x, e.arena.minX, e.arena.maxX);
+          p.z = T.MathUtils.clamp(p.z, e.arena.minZ, e.arena.maxZ);
+        }
         world.settleY(p);
         e.knock.multiplyScalar(Math.exp(-10 * dt));
         if (e.behavior.attack) e.behavior.attack(e, ctx); else defaultAttack(e, ctx);

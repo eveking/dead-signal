@@ -56,7 +56,7 @@
     wave({ total: 54, entries: [{ type: 'fogger', count: 6 }, { type: 'bomber', count: 14 }, { type: 'splitter', count: 8 }, { type: 'tyrant', count: 5 }, { type: 'walker', count: 12 }, { type: 'runner', count: 9 }], groups: ['西', '东', '北'], interval: 0.38, maxAlive: 45, note: '视野压制波' }),
     wave({ total: 56, entries: [{ type: 'fogger', count: 8 }, { type: 'bomber', count: 16 }, { type: 'splitter', count: 8 }, { type: 'tyrant', count: 6 }, { type: 'runner', count: 18 }], groups: ['西', '东', '北'], interval: 0.36, maxAlive: 45, note: '先破封雾再上顶' }),
     wave({ total: 60, entries: [{ type: 'bomber', count: 14 }, { type: 'splitter', count: 10 }, { type: 'fogger', count: 8 }, { type: 'tyrant', count: 8 }, { type: 'walker', count: 10 }, { type: 'runner', count: 10 }], groups: ['西', '东', '北', '顶'], interval: 0.35, maxAlive: 45, batches: 4, batchInterval: 5, specialBox: true, note: '小最终关，分 4 批投放' }),
-    wave({ total: 1, boss: true, bossType: 'megaTitan', entries: [], groups: ['北'], interval: 0.35, maxAlive: 45, reinforce: { every: 18, entries: [{ type: 'bomber', count: 3 }] }, summon: { every: 18, picks: [[{ type: 'bomber', count: 3 }], [{ type: 'runner', count: 4 }]] }, note: '决战' })
+    wave({ total: 1, boss: true, bossType: 'megaTitan', entries: [], groups: ['南'], interval: 0.35, maxAlive: 45, reinforce: { every: 18, entries: [{ type: 'bomber', count: 3 }] }, summon: { every: 18, picks: [[{ type: 'bomber', count: 3 }], [{ type: 'runner', count: 4 }]] }, note: '决战' })
   ];
 
   // 旧「隔离区 07 · 5 波练习」模式：waveSizes 数据化，生成公式仍走旧逻辑（dataDriven:false）。

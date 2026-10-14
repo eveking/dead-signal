@@ -194,9 +194,10 @@
 
     land(position) {
       const world = this.game.world;
-      this.position.set(position.x, 0, position.z);
+      // 落点高度跟着来源走：投奔车顶队友时要在 3.2m 顶面找站位，而不是掉到车厢底下。
+      this.position.set(position.x, Number.isFinite(position.y) ? position.y : 0, position.z);
       for (let i = 0; i < 10; i++) {
-        if (world.canStand(this.position.x, this.position.z, 0.42)) break;
+        if (world.canStand(this.position.x, this.position.z, 0.42, this.position.y)) break;
         this.position.x += (Math.random() - 0.5) * 2;
         this.position.z += (Math.random() - 0.5) * 2;
       }
