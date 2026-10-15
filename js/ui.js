@@ -34,7 +34,8 @@
         'wave-banner banner-title banner-subtitle banner-eyebrow toast damage-overlay ' +
         'result-eyebrow result-title result-description result-score result-wave result-kills ' +
         'result-headshot result-coins result-coins-cell result-time result-breakdown ' +
-        'result-breakdown-text result-squad-board result-squad-list ' +
+        'result-breakdown-text result-squad-board result-squad-list result-best result-record ' +
+        'menu-best menu-best-score menu-best-meta ' +
         'downed downed-ring downed-count downed-hint rally rally-count coins-panel coins-value ' +
         'squad-panel squad-rows fog-veil boss-bar boss-name boss-fill boss-value';
       ids.split(' ').forEach((id) => { this.el[id] = document.getElementById(id); });
@@ -152,6 +153,7 @@
       this.el['setup-coins-value'].textContent = DZ.Settings.coins + ' 枚';
       this.el.hardcore.hidden = DZ.Settings.coins !== 0;
       this.el['mission-waves'].textContent = padded(mode.waves.length, 2);
+      this._updateMenuBest();
     }
 
     setScreen(state) {
@@ -165,6 +167,23 @@
       this.el.result.hidden = state !== 'won' && state !== 'lost';
       this.el['damage-overlay'].hidden = !inGame;
       document.body.classList.toggle('playing', inGame);
+      if (state === 'menu') this._updateMenuBest();
+    }
+
+    // 主菜单的历史最佳条：只显示当前所选模式的纪录。
+    _updateMenuBest() {
+      var node = this.el['menu-best'];
+      if (!node || !DZ.best) return;
+      var mode = DZ.Settings.mode === 'practice' ? 'practice' : 'giant';
+      var best = DZ.best.load(mode);
+      node.hidden = !best;
+      if (!best) return;
+      var waves = DZ.WAVES.mode(mode).waves.length;
+      var diff = DZ.WAVES.DIFFICULTY[best.difficulty];
+      this.el['menu-best-score'].textContent = String(count(best.score));
+      this.el['menu-best-meta'].textContent = '第 ' + count(best.wave) + ' / ' + waves + ' 波 · ' +
+        (diff ? diff.name : '—') + ' · ' + this._formatTime(best.time) + ' · ' +
+        new Date(number(best.date, 0)).toLocaleDateString();
     }
 
     update(dt) {
@@ -544,6 +563,11 @@
         (deathWave > 0 ? '阵亡于第 ' + deathWave + ' 波。' : '') + '防线已经失守，但任务尚未结束。重整装备，再次出发。');
       // §9 总分 = (击杀分 + 波次分) × 难度倍率 × 硬核加成；练习模式 finalScore 即原始分。
       this._text('result-score', count(number(game.finalScore, game.score)));
+      // §9 最佳纪录：比较口径就是 finish 时落的 finalScore，localStorage 按模式分组。
+      var bestMode = (game.waveMode && game.waveMode.key) || DZ.Settings.mode || 'giant';
+      var best = DZ.best.load(bestMode);
+      this._text('result-best', best ? String(count(best.score)) : '—');
+      this.el['result-record'].hidden = !(game.newRecord && best);
       var total = this._totalWaves(game);
       this._text('result-wave', clamp(count(game.wave), 0, total) + ' / ' + total);
       this._text('result-kills', count(game.kills) + ' / ' + count(game.headshots));

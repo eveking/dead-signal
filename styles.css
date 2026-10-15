@@ -83,3 +83,7 @@
 .result-squad-board li{display:flex;justify-content:space-between;font-size:9px;color:#cfdac5}
 .result-squad-board li em{font-style:normal;color:#8fd0ff}
 @media(max-width:700px){.result-extra{flex-wrap:wrap;gap:8px}}
+/* M7 最佳纪录：主菜单纪录条 + 结算"新纪录"徽标 */
+.menu-best{display:flex;align-items:baseline;gap:8px;margin:0 0 14px;font:9px/1.6 var(--mono);letter-spacing:1.5px;color:#8fa38a}
+.menu-best b{color:#dcfa86;font-size:15px}
+.result-record{display:inline-block;margin-top:7px;padding:1px 7px;font:8px/1.7 var(--mono);letter-spacing:1.5px;color:#0e1a16;background:#dcfa86}

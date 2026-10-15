@@ -15,6 +15,23 @@
     return;
   }
 
+  // §9 最佳纪录：localStorage 按模式分组，比较取 finalScore。
+  DZ.best = {
+    key(mode) { return 'dead-signal.best.' + mode; },
+    load(mode) {
+      try { return JSON.parse(localStorage.getItem(this.key(mode))) || null; }
+      catch (error) { return null; }
+    },
+    // 破纪录才写入；返回 { previous, isNew } 供结算 UI 显示"新纪录"。
+    submit(mode, entry) {
+      const previous = this.load(mode);
+      if (previous && previous.score >= entry.score) return { previous, isNew: false };
+      try { localStorage.setItem(this.key(mode), JSON.stringify(entry)); }
+      catch (error) { /* localStorage 不可用（隐私模式）时静默放弃纪录 */ }
+      return { previous, isNew: true };
+    }
+  };
+
   DZ.Game = class Game {
     constructor() {
       this.state = 'menu';
@@ -24,6 +41,9 @@
       this.finalScore = 0;
       this.coinsUsed = 0;
       this.deathWave = 0;
+      this.bestRecord = null;
+      this.bestEntry = null;
+      this.newRecord = false;
       this.scoreMultiplier = 1;
       this.wavePhase = 'intermission';
       this.nextWaveIn = 4;
@@ -162,6 +182,9 @@
       this.finalScore = 0;
       this.coinsUsed = 0;
       this.deathWave = 0;
+      this.bestRecord = null;
+      this.bestEntry = null;
+      this.newRecord = false;
       this.scoreMultiplier = 1;
       this.wavePhase = 'intermission';
       this.nextWaveIn = 4;
@@ -317,6 +340,14 @@
         this.difficultyConfig.scoreMultiplier * (this.hardcore ? 1.5 : 1) : 1;
       this.scoreMultiplier = mult;
       this.finalScore = Math.round(this.score * mult);
+      // §9 最佳纪录：按模式（giant/practice）落 localStorage，返回是否破纪录供结算显示。
+      this.bestEntry = {
+        score: this.finalScore, wave: this.wave, difficulty: DZ.Settings.difficulty,
+        time: this.time, date: Date.now()
+      };
+      const best = DZ.best.submit(this.waveMode.key || DZ.Settings.mode, this.bestEntry);
+      this.bestRecord = best.previous;
+      this.newRecord = best.isNew;
       this.player.downed = false;
       this.player.downedRemaining = 0;
       this.player.clearInput();

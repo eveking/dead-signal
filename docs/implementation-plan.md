@@ -12,11 +12,13 @@
 | M1 | 复活币与濒死/传送流程 ✅ 2026-10-13 | 3 pd | M0 |
 | M2 | 队友 squad + 仇恨系统 ✅ 2026-10-13 | 5 pd | M1 |
 | M3 | 敌种注册表 + 6 种行为 + BOSS 状态机 ✅ 2026-10-13 | 6 pd | M2 |
-| M4 | 地图重建（96×48 长图 / 可行走车顶 / 三路线）🟡 M4a ✅ 2026-10-14，M4b 待做 | 5 pd | M0（可与 M1–M3 并行或插入） |
-| M5 | 补给点位 + 特殊武器 + BOSS 血条 | 3 pd | M3, M4 |
-| M6 | 调平、性能、结算与打包 | 3 pd | M5 |
+| M4 | 地图重建（96×48 长图 / 可行走车顶 / 三路线）✅ M4a ✅ 2026-10-14 / M4b ✅ 2026-10-14 | 5 pd | M0（可与 M1–M3 并行或插入） |
+| M4c | 箱顶栈道 + 跨通道横桥（M4 的追加项，非原排期内容）✅ 2026-10-15，备忘挂在 M4 节下 | 追加，不计入 27 pd | M4b |
+| M5 | 补给点位 + 特殊武器 + BOSS 血条 ✅ 2026-10-15 | 3 pd | M3, M4 |
+| M6 | 调平、性能、结算与打包 ✅ 2026-10-15 | 3 pd | M5 |
+| M7 | 表现层欠债（BOSS 独立骨架）+ 最佳纪录 + 真机收尾 ✅ 2026-10-15 | 追加 4 pd，不计入 27 pd | M6 |
 
-合计 ≈ 27 pd。串行做约 5–6 周；若 M4 提前并行可压缩到 4 周左右。
+合计 ≈ 27 pd（M7 追加 4 pd 后共 31 pd）。串行做约 5–6 周；若 M4 提前并行可压缩到 4 周左右。
 
 ## M0 · 波次数据化（2 pd）— 已完成 2026-10-12
 
@@ -123,7 +125,7 @@ M3b BOSS（3 pd）：
 - **M5 接缝**：`enemies.onBossDeath = enemy => {}`（game 侧挂载，测试里 `hook` 用例验证：BOSS 死亡调用 1 次、普通敌种不调用）。15/20 波"泰坦必掉特殊武器箱"直接读这个回调的 `enemy.root.position`，不要再加新的死亡判定分支。
 - **BOSS 半径**：`spawnAt()` 用 `def.radius * entry.bossScale`（泰坦 0.968 / 巨型泰坦 1.232）做 canStand 校验，M4 换图后 BOSS 的刷点净空要按这个半径重排；`e.stopAt/attackAt` 已随半径放大。
 - **冒烟实测**（67 条断言全绿，与 M3a 的 139 条一起构成 5/10/15/20/29/30 六波检查表）：泰坦 6000 HP/scale 2.2/半径 0.968/§7 技能参数逐项核对；冲刺前摇 48 帧不位移、位移 9.80m、命中 40 伤 + 击退 3.00m、一次冲刺只结算一次、CD 12.00s；砸地红圈半径 5、持续 54 帧、50 伤、6.4m 圈外单位不受影响、CD 8.00s；召唤 15 波 2 步行+2 疾行、20 波 2 自爆+2 疾行、落点距 BOSS <9m、CD 20s 复位；`threat` 仇恨四段（无输出取最远 → 玩家 1 次命中锁定 → 尖刀 4 次命中反超 → 5.2s 衰减回最远）；巨型泰坦 15000 HP、冲刺 15.90m/50 伤/可转向、连砸 2 次含 slamGap 间隔、8s CD、60% 震波全场位移 2.00/2.07m 且零伤害、`quakeDone` 锁定不重复；狂暴 41% 不触发、39% 触发、移速 3.3、红自发光 a8281a、砸地半径 6.5、CD 4.80s、召唤固定 3 自爆、CD 10.45s（18×0.6 衰减后）；15 波实跑（自动投 BOSS、增援只在存活时入队 4/5、死后停止投放且波次可结算）；29 波实跑 25s（4 批次 0/5.0/10.1/15.1s、六类同场、峰值 45 不越上限、无 BOSS）；`onBossDeath` 钩子。
-- **留给 M6 调平（M3b）**：BOSS 开局缓冲 `chargeCd 3s / slamCd 5s / summonCd = every×0.6`、接触近战 CD 2.0s 都是实现自定；BOSS 沿用 walker 模型 × scale，M4 之后需要独立骨架（践踏/抬臂/砸地的剪影区分）。
+- **留给 M6 调平（M3b）**：BOSS 开局缓冲 `chargeCd 3s / slamCd 5s / summonCd = every×0.6`、接触近战 CD 2.0s 都是实现自定；BOSS 沿用 walker 模型 × scale，M4 之后需要独立骨架（践踏/抬臂/砸地的剪影区分）。→ 数值项 M6 已定稿；独立骨架欠债 **M7 已还**（见 M7 节）。
 
 
 
@@ -189,7 +191,7 @@ M4b 高层玩法与战场规则（2 pd）：
 - **冒烟实测**（页内定步长，`index.html` 与单文件版各跑一遍）：桥下 `floorAt(...,0)=0` 而不传参 3.6；箱顶 lid 3.36/3.46/3.51 可站、`fromY=0` 不可上；车顶全局最高仍 3.2 且地面单位不可上；`nav` 地面层封闭 / `navAlly` 箱顶开放；玩家四层（0 / 3.2 / 3.36 / 3.6）稳定站立、走出边界转自由落体；`segmentClear` 证明站桥面不是无敌点（地面射手能打到你）；高台链路 南斜坡→装载甲板→车顶→横桥→西带栈道→最北箱 全程不下坡；练习图 `surfaces.length === 0` 不变（`walkTop` 是 opt-in）；1500 帧波 13 模拟 0.18ms/帧、0 悬空/NaN 敌人。
 - **单文件版同步方式（改了做法，后续沿用）**：`DEAD-SIGNAL-单文件版.html` 内联了压缩版 three.js（单行几十万字符），**不能整文件重拼**。按 `  <script>` / `  </script>` 行定位 11 个块（第 1 块是 three.js，跳过），其余 10 块与 `js/waves|world|audio|player|effects|enemies|squad|weapons|ui|game.js` 一一对应，逐行比对后整块替换（行内 splice，倒序应用避免索引漂移）。本轮只有 world/player/effects/squad 四块陈旧，替换后 10 块 diff 归零、body 与 styles.css 段 diff 归零。
 
-## M5 · 补给与特殊武器（3 pd）
+## M5 · 补给与特殊武器（3 pd）— 已完成 2026-10-15（随 M6 一起提交 045faf3）
 
 对应 §8、§10-9。
 
@@ -251,6 +253,32 @@ M4b 高层玩法与战场规则（2 pd）：
 - **测试环境已从 CDP 换到内部浏览器**（本轮指示）：`tests/browser.cjs` + `:9223` 专用 Chrome 那条路弃用（`.chrome-dbg/` 空转，可删）。页内通路是 `http://127.0.0.1:8080/…?v=<bust>` → 注入 `__load(file, global)`（`fetch('/tests/<file>.cjs', { cache: 'no-store' })`，用 `new Function('require', …)` 重建 HELPERS/CASES，`require` 必须是**返回 fake 的函数**而不是 fake 本身）+ `__go(file, global, names)` 顺序跑 case 写 `window.__P`，再用独立 evaluate 轮询读数（MCP 单次调用 15s 超时，长 case 必须 `setTimeout` 后台启动）。**页面 reload 会销毁 harness，要重新注入**；注入脚本必须整段发送，截断会被权限分类器拦下。
 - **节奏（M6 复核结论 + 2026-10-15 定稿）**：30 波对不上原 60–75 分钟目标——normal 难度全 30 波共 **945 只 / 总血量 121,100**，投放窗口 499s、间奏 29×15=435s；步枪 257 DPS 打满 7.9 分钟，55% 有效 DPS 约 14.3 分钟，加上间奏也只有 ~22 分钟（悲观真人 25% 效率估到 30–45 分钟）。这是设计目标与 §5/§6 已定稿兵力/血量表之间的冲突，不是实现缺陷。**你的拍板：数值表与间奏都不动，目标口径改成"普通难度 30–45 分钟"**，所以本节只留测量结论、不留待办。当时列过的备选（若日后要拉长再回来选，均已否决）：① `intermission 15→30s` + 拉开投放间隔；② `DIFFICULTY.normal.hp 1→1.6` 或 21 波后分段加成；③ 延长到 40 波。注意 `resolveStats` 的血量是 `round(def.hp × diff.hp)`，改倍率会覆盖全 30 波并被 `difficultyTuning` 18 条立刻抓到取整不一致。
 - **留给后续（若有 M7/真机测试）**：真 GPU + 可见窗口的 60fps 复测（本门限是软渲染后台窗口的保守值）；真人 30 波计时，用来验证"30–45 分钟"这个新口径。`tmp-m6.cjs` 里 `perfLodAB` 的三轮 A/B 在慢机上单次要跑 3–5 分钟，若进 CI 需要拆成 draw-stat 与 timing 两条。
+
+## M7 · 表现层欠债、最佳纪录与真机收尾（4 pd）— 已完成 2026-10-15
+
+对应 §9（最佳纪录，不做完整排行榜）+ M3b 遗留的 BOSS 模型欠债（本文档 M3 节"留给 M6 调平"末行）。
+
+### BOSS 独立骨架（js/enemies.js）
+
+- **建模分支**：`buildBody()` 首行 `if (enemy.boss) { this.buildBossBody(enemy, shape); return; }`，walker 系完全不走这条路径。`SHAPES.titan/megaTitan` 换独立配色（skin/cloth/plate + horns 1/2、mega 加背刺）。
+- **骨架结构（判断点）**：新增 `lean` 俯仰骨 Group（挂在 root 下、y=0.98），胸甲/宽肩甲/驼背/头/角全部挂它——**animate 的前倾只写 `lean.rotation.x`，绝不碰 `root.position/rotation.x`**（root.rotation.x 归死亡动画在用）。四肢仍是 `limbs` 四枢轴（push 顺序先腿后臂）+ `head` 引用，M3b 起的断言结构不破。`enemy.bossRig = { lean, legL, legR, armL, armR, head }` 供调试取用。
+- **命中件（判断点）**：`part()` 造的躯干件（胸/头/上臂/前臂/拳）进 `hitTargets()` 且留在躯干包络内，`hitTargets()` 只增不减；眼/头冠/巨角/背刺/脚掌等装饰走 `decor()` 只进 `e.detail`——BOSS `lodLevel` 恒 -1，detail 分组语义照旧安全。头件保留 `userData.headshot`。
+- **动画状态机**：`BOSS_BEHAVIOR.animate` 全重写，对齐 `skill.phase` 与 `sk.wind`，只改旋转：idle 践踏步态（高抬腿，gait 随 `|walk|` 淡入）、chargeWind 双臂后摆上抬（k 由 `1 - sk.wind/def.charge.windup` 驱动）、charge 前倾 0.62 + 高频刨地、slamWind/slamGap 单腿上抬 + 双臂过顶、impact 落地跺压。`sk.impact = 0.3` 是新增的落地计时（`bossSlam()` 置位、animate 每帧自减消费），spawn 初始化 `impact: 0`。
+- **狂暴换色**：保留 animate 内 `e.skin/e.cloth/e.eyeMaterial` 的 setHex 路径（tmp-m3b rage 断言锁精确色 0xa8281a/0x6e150f/0xff4a2a），新增 `e.plate.emissive.setHex(0x4d130d)` 同步烧红胸板；`remove()` 里补 `plate.dispose()`。
+- **数值判定零改动**：15000 血、bossArena 30m、净空 1.232 等全部原样，tmp-m3b 的 charge/slam/megaSkills/rage 六组断言在开发页与单文件页均全绿。
+
+### 最佳纪录（§9，localStorage）
+
+- **入口 `DZ.best`（js/game.js，Game 类之前）**：`key(mode) = 'dead-signal.best.' + mode`（giant/practice 各一条），entry 结构 `{ score, wave, difficulty, time, date }`；`submit()` 只在 `entry.score > previous.score` 时写入并返回 `{ previous, isNew }`，localStorage 抛异常（隐私模式）静默吞掉。
+- **落盘时机**：`finish()` 里 finalScore 算完之后，`score = finalScore`（含难度/硬核倍率后的总分，不是裸击杀分），mode 取 `waveMode.key || Settings.mode`；`bestRecord/bestEntry/newRecord` 三个字段在 constructor 与 newGame 双处重置。
+- **UI（判断点）**：结算面板新增"历史最佳"格 + `result-record` 新纪录徽标，填充代码写在 `_fillResult()` 的 `!giant` 早退**之前**（M6 的练习模式残留 bug 教训）；主菜单 `menu-best` 条在 `setScreen('menu')` 与 `refreshSettingsUi()` 两个入口刷新，切模式即换纪录。
+
+### 真机收尾与回归
+
+- **视觉冒烟（单文件页，截图存 tests/tmp-m7-*.jpg）**：titan 践踏动态（宽肩小头双角剪影，与 walker 明确区分）、slamWind 双臂过顶、chargeWind 抬臂前倾、megaTitan 狂暴全场烧红（emissive a8281a 实测在图）。内置浏览器面板不可见导致 `take_screenshot` 拿不到 surface，改走页内 `toDataURL` + 临时 8081 接收服务落盘（脚本用完已删）。
+- **回归（开发页与单文件页双份，全绿）**：tmp-m3a 139 / tmp-m3b 67 / tmp-m4b 82 / tmp-m5 **95**（排期备忘写的 96 是笔误，两套页面实测断言数都是 95）/ tmp-m6 117；C 步最佳纪录 7 条断言（落盘字段、结算显示、低分不破、高分刷新、practice 独立 key、菜单显示、切模式换纪录）双页全过。控制台无游戏侧 error。
+- **打包**：`DEAD-SIGNAL-单文件版.html` 用行块 splice 法重打（three 块 FNV hash 不变、10 个 JS 块 + style + DOM 段逐块 MATCH、`</body>` 唯一、二次跑幂等 NOOP）。
+- **仍遗留（不阻塞）**：M6 备忘里的"真 GPU + 可见窗口 60fps 复测"与"真人 30 波计时验证 30–45 分钟口径"两项需要真人真机，本轮未覆盖。
 
 ## 里程碑外的备忘
 

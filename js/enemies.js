@@ -47,8 +47,8 @@
     tyrant: { skin: 0x718d4e, cloth: 0x3c5231, torso: 1.5, arm: 1.4, leg: 1.18, head: 1.55, horn: true, eye: 0xffa94a },
     fogger: { skin: 0xbcc7b4, cloth: 0x465c56, torso: 1.05, cloak: true, head: 1.05, eye: 0xd8fff0, glow: 0x8fe6c4 },
     splitter: { skin: 0x9a74a6, cloth: 0x3b2c46, torso: 0.92, arm: 1.15, blade: true, head: 0.95, eye: 0xe6c9ff, glow: 0xc18ff5 },
-    titan: { skin: 0x6f6046, cloth: 0x4a3d2b, torso: 1.22, arm: 1.3, leg: 1.12, head: 1.2, horn: true, eye: 0xff9c4a },
-    megaTitan: { skin: 0x7a5a48, cloth: 0x4d3527, torso: 1.32, arm: 1.4, leg: 1.18, head: 1.25, horn: true, eye: 0xff7a4a }
+    titan: { skin: 0x6f6046, cloth: 0x39301f, plate: 0x8a7a54, eye: 0xff9c4a, horns: 1 },
+    megaTitan: { skin: 0x7a5a48, cloth: 0x3d2c1a, plate: 0x93705a, eye: 0xff7a4a, horns: 2, spikes: true }
   };
 
   // 旧 48×48 图（练习模式）的 fast 变体配色，M3 不改旧模式外观。
@@ -170,20 +170,59 @@
       defaultAttack(e, ctx);
     },
     animate(e, ctx, walk) {
-      const sk = e.skill, def = e.def;
-      defaultAnimate(e, ctx, walk);
-      if (sk.phase === 'chargeWind' || sk.phase === 'charge') {
-        const k = sk.phase === 'charge' ? 1 : 1 - sk.wind / def.charge.windup;
-        e.limbs[0].rotation.x = -1.2 - k * 1.2;
-        e.limbs[1].rotation.x = -1.2 - k * 1.2;
+      const sk = e.skill, def = e.def, rig = e.bossRig;
+      if (sk.impact > 0) sk.impact -= ctx.dt;
+      // 践踏步态：双腿交替高抬迈步、手臂反向大摆、躯干常前倾。
+      const gait = Math.min(1, Math.abs(walk) / 0.18);
+      const step = Math.sin(e.age * e.speed * 2.6 + e.phase);
+      rig.legL.rotation.x = -walk * 2 - Math.max(0, step) * 0.55 * gait;
+      rig.legR.rotation.x = walk * 2 + Math.min(0, step) * 0.55 * gait;
+      rig.armL.rotation.x = -0.22 + walk * 1.6;
+      rig.armR.rotation.x = -0.22 - walk * 1.6;
+      rig.lean.rotation.x = 0.12;
+      rig.head.rotation.z = Math.sin(e.age * 2 + e.phase) * 0.05;
+      if (e.attack > 0) {
+        // 近战重砸：双臂举过头顶再劈下。
+        const k = 1 - e.attack / e.melee.windup;
+        rig.armL.rotation.x = -2.4 + k * 3.2;
+        rig.armR.rotation.x = -2.4 + k * 3.2;
+        rig.lean.rotation.x = 0.12 + Math.sin(k * Math.PI) * 0.3;
+      }
+      if (sk.phase === 'charge') {
+        // 冲刺：上身深俯、双臂后掠、双腿高频刨地。
+        rig.lean.rotation.x = 0.62;
+        rig.armL.rotation.x = 0.8;
+        rig.armR.rotation.x = 0.8;
+        rig.legL.rotation.x = -Math.sin(e.age * 30) * 0.55;
+        rig.legR.rotation.x = Math.sin(e.age * 30) * 0.55;
+      } else if (sk.phase === 'chargeWind') {
+        // 冲刺前摇 0.8s：双臂高抬（§7 的"抬臂动作"），上身向后蓄力。
+        const k = 1 - sk.wind / def.charge.windup;
+        rig.armL.rotation.x = -1.2 - k * 1.2;
+        rig.armR.rotation.x = -1.2 - k * 1.2;
+        rig.lean.rotation.x = 0.12 - k * 0.3;
       } else if (sk.phase === 'slamWind' || sk.phase === 'slamGap') {
-        const k = sk.phase === 'slamGap' ? 1 : 1 - sk.wind / def.slam.windup;
-        e.limbs[0].rotation.x = -2.7 * k;
-        e.limbs[1].rotation.x = -2.7 * k;
+        // 砸地前摇：单腿前抬（践踏起手）+ 双臂过顶；连砸间隙重新蓄力。
+        let p = sk.phase === 'slamGap' ? 1 - sk.wind / def.slam.gap : 1 - sk.wind / def.slam.windup;
+        if (sk.phase === 'slamGap' && sk.impact > 0) p = Math.max(0, p - sk.impact / 0.3 * 1.4);
+        rig.armL.rotation.x = -2.7 * p;
+        rig.armR.rotation.x = -2.7 * p;
+        rig.legL.rotation.x = -1.15 * p;
+        rig.legR.rotation.x = 0.3 * p;
+        rig.lean.rotation.x = 0.12 - 0.3 * p;
+      }
+      if (sk.impact > 0 && (sk.phase === 'slamGap' || sk.phase === 'idle')) {
+        // 砸地落地瞬间：抬起的腿跺下、双臂由过顶劈落、上身前压。
+        const d = sk.impact / 0.3;
+        rig.legL.rotation.x = 0.35 * d;
+        rig.armL.rotation.x = 0.5 * d - 2.7 * (1 - d);
+        rig.armR.rotation.x = 0.5 * d - 2.7 * (1 - d);
+        rig.lean.rotation.x = 0.12 + 0.55 * d;
       }
       if (e.rage) {
         e.skin.emissive.setHex(0xa8281a);
         e.cloth.emissive.setHex(0x6e150f);
+        if (e.plate) e.plate.emissive.setHex(0x4d130d);
         if (e.eyeMaterial) e.eyeMaterial.color.setHex(0xff4a2a);
       }
     }
@@ -237,6 +276,7 @@
   function bossSlam(e, ctx) {
     const def = e.def, sk = e.skill;
     ctx.E.area(e, slamRadius(e), def.slam.damage, ctx);
+    sk.impact = 0.3; // 落地瞬间的跺腿/劈臂姿态计时，由 animate 消费
     sk.slamsLeft--;
     if (sk.slamsLeft > 0) {
       sk.phase = 'slamGap';
@@ -472,6 +512,7 @@
     }
 
     buildBody(enemy, shape) {
+      if (enemy.boss) { this.buildBossBody(enemy, shape); return; }
       const root = enemy.root;
       const skin = new T.MeshStandardMaterial({ color: shape.skin, roughness: 0.92, emissive: 0x000000 });
       const cloth = new T.MeshStandardMaterial({ color: shape.cloth, roughness: 0.93, emissive: 0x000000 });
@@ -549,6 +590,88 @@
       enemy.shadow = shadow;
     }
 
+    // M7 BOSS 独立骨架：宽肩重甲、小头陷于双肩之间、粗短双腿，与步行者剪影区分。
+    // 命中件仍全部挂在 root/枢轴组下并进 enemy.targets；root.scale 由 spawn 统一处理。
+    buildBossBody(enemy, shape) {
+      const root = enemy.root;
+      const skin = new T.MeshStandardMaterial({ color: shape.skin, roughness: 0.9, emissive: 0x000000 });
+      const cloth = new T.MeshStandardMaterial({ color: shape.cloth, roughness: 0.93, emissive: 0x000000 });
+      const plate = new T.MeshStandardMaterial({ color: shape.plate, roughness: 0.7, metalness: 0.35, emissive: 0x000000 });
+      enemy.skin = skin; enemy.cloth = cloth; enemy.plate = plate;
+      const part = (x, y, z, w, h, d, material, parent) => {
+        const mesh = new T.Mesh(this.cube, material);
+        mesh.position.set(x, y, z); mesh.scale.set(w, h, d);
+        mesh.userData.enemy = enemy;
+        mesh.receiveShadow = true;
+        parent.add(mesh); enemy.targets.push(mesh);
+        return mesh;
+      };
+      const decor = (x, y, z, w, h, d, material, parent) => {
+        const mesh = new T.Mesh(this.cube, material);
+        mesh.position.set(x, y, z); mesh.scale.set(w, h, d);
+        parent.add(mesh); enemy.detail.push(mesh);
+        return mesh;
+      };
+      // 腿：枢轴在髋部，粗 thigh + 前掌；BOSS 不参与 LOD，脚掌进命中件。
+      const rig = {};
+      for (const side of [-1, 1]) {
+        const legGroup = new T.Group(); legGroup.position.set(side * 0.32, 0.92, 0);
+        root.add(legGroup);
+        part(0, -0.38, 0, 0.38, 0.76, 0.44, cloth, legGroup);
+        part(0, -0.82, 0.08, 0.36, 0.14, 0.56, plate, legGroup);
+        if (side < 0) rig.legL = legGroup; else rig.legR = legGroup;
+        enemy.limbs.push(legGroup);
+      }
+      // 上身俯仰骨：冲刺前摇/冲刺/砸地落地的前倾都写在 lean 上（root.rotation.x 留给死亡动画）。
+      const lean = new T.Group(); lean.position.set(0, 0.98, 0); root.add(lean);
+      rig.lean = lean;
+      part(0, 0.34, 0, 0.9, 0.66, 0.54, cloth, lean);      // 厚重胸甲躯干
+      part(0, 0.4, 0.29, 0.56, 0.4, 0.06, plate, lean);    // 胸甲板（命中躯干）
+      part(0, 0.75, 0, 1.14, 0.24, 0.5, plate, lean);      // 连体宽肩甲
+      part(0, 0.72, -0.2, 0.5, 0.44, 0.22, skin, lean);    // 驼背
+      if (shape.spikes) {
+        // 巨型泰坦背脊骨刺：装饰件，不参与命中。
+        for (const sx of [-0.22, 0, 0.22]) {
+          decor(sx, 0.95, -0.3, 0.1, 0.44, 0.12, plate, lean).rotation.x = -0.5;
+        }
+      }
+      const headMesh = new T.Mesh(this.headGeometry, skin);
+      headMesh.position.set(0, 0.98, 0.04);
+      headMesh.scale.set(0.78, 0.7, 0.76);
+      headMesh.userData.enemy = enemy; headMesh.userData.headshot = true;
+      lean.add(headMesh); enemy.targets.push(headMesh);
+      enemy.head = headMesh; rig.head = headMesh;
+      const eyeMaterial = new T.MeshBasicMaterial({ color: shape.eye || 0xff9c4a });
+      enemy.eyeMaterial = eyeMaterial;
+      for (const side of [-1, 1]) {
+        decor(side * 0.12, 0.02, 0.24, 0.09, 0.04, 0.03, eyeMaterial, headMesh);
+      }
+      decor(0, 0.3, 0.02, 0.12, 0.3, 0.34, plate, headMesh).rotation.x = -0.4; // 头冠
+      if (shape.horns >= 2) {
+        for (const side of [-1, 1]) {
+          decor(side * 0.26, 0.16, -0.06, 0.1, 0.42, 0.1, plate, headMesh).rotation.z = side * 0.5;
+        }
+      }
+      // 臂：枢轴在肩甲下沿，抬臂时肩甲随臂组一起动（挂在 lean 上）。
+      for (const side of [-1, 1]) {
+        const armGroup = new T.Group(); armGroup.position.set(side * 0.62, 0.68, 0);
+        lean.add(armGroup);
+        part(side * 0.08, -0.06, 0, 0.36, 0.34, 0.5, plate, armGroup); // 肩甲块
+        part(0, -0.42, 0, 0.3, 0.5, 0.32, cloth, armGroup);            // 上臂
+        part(0, -0.82, 0.02, 0.26, 0.4, 0.28, skin, armGroup);         // 前臂
+        part(0, -1.1, 0.02, 0.32, 0.26, 0.32, cloth, armGroup);        // 拳
+        if (side < 0) rig.armL = armGroup; else rig.armR = armGroup;
+        enemy.limbs.push(armGroup);
+      }
+      const shadow = new T.Mesh(this.shadowGeometry, this.shadowMaterial);
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.y = 0.027;
+      shadow.scale.setScalar(enemy.radius / 0.44);
+      root.add(shadow);
+      enemy.shadow = shadow;
+      enemy.bossRig = rig;
+    }
+
     spawn(position, wave = this.wave, entry = null) {
       const stats = this.resolveStats(entry || { fast: wave >= 3 && this.serial % 4 === 0 }, wave);
       const def = stats.def;
@@ -576,10 +699,10 @@
         // BOSS 技能阶段机；开局给 3s/5s 缓冲，避免刷新瞬间糊脸。
         rage: false, skill: def.boss ? {
           phase: 'idle', wind: 0, dash: null, chargeCd: 3, slamCd: 5, slamsLeft: 0,
-          summonCd: def.summon ? def.summon.every * 0.6 : 0, quakeDone: false
+          summonCd: def.summon ? def.summon.every * 0.6 : 0, quakeDone: false, impact: 0
         } : null
       };
-      // BOSS（泰坦 2.2 / 巨型泰坦 2.8）沿用步行者模型 × scale。
+      // M7 起 BOSS（泰坦 2.2 / 巨型泰坦 2.8）用独立骨架 buildBossBody，仍由 root.scale 放大。
       root.scale.setScalar(stats.scale);
       this.buildBody(enemy, shape);
       this.game.world.scene.add(root);
@@ -952,6 +1075,7 @@
       const enemy = this.list[index];
       this.game.world.scene.remove(enemy.root);
       enemy.skin.dispose(); enemy.cloth.dispose();
+      if (enemy.plate) enemy.plate.dispose();
       if (enemy.eyeMaterial) enemy.eyeMaterial.dispose();
       if (enemy.cape) enemy.cape.dispose();
       if (enemy.glowMat && enemy.glowMat !== enemy.skin) enemy.glowMat.dispose();
