@@ -23,7 +23,7 @@
 
   // 西/东/北/顶四组刷怪点由各套地图自带（world.spawnGroups），波次数据只登记组名。
   function wave(config) {
-    return Object.assign({ interval: 0.6, maxAlive: 30, groups: ['西', '东'], batches: 1, batchInterval: 0, boss: false, specialBox: false, reinforce: null, summon: null }, config);
+    return Object.assign({ interval: 0.6, maxAlive: 30, groups: ['西', '东'], batches: 1, batchInterval: 0, boss: false, specialBox: false, specialWeapon: null, reinforce: null, summon: null }, config);
   }
 
   const GIANT_WAVES = [
@@ -34,28 +34,28 @@
     wave({ total: 18, entries: [{ type: 'walker', count: 13 }, { type: 'runner', count: 0 }, { type: 'bomber', count: 4 }, { type: 'tyrant', count: 1 }], interval: 0.8, note: '自爆登场' }),
     wave({ total: 20, entries: [{ type: 'walker', count: 11 }, { type: 'bomber', count: 5 }, { type: 'tyrant', count: 2 }, { type: 'runner', count: 2 }], interval: 0.78 }),
     wave({ total: 22, entries: [{ type: 'walker', count: 12 }, { type: 'bomber', count: 6 }, { type: 'tyrant', count: 2 }, { type: 'runner', count: 2 }], groups: ['西', '西', '东'], interval: 0.76, note: '西重' }),
-    wave({ total: 24, entries: [{ type: 'bomber', count: 6 }, { type: 'tyrant', count: 3 }, { type: 'runner', count: 8 }, { type: 'walker', count: 7 }], interval: 0.74, specialBox: true }),
+    wave({ total: 24, entries: [{ type: 'bomber', count: 6 }, { type: 'tyrant', count: 3 }, { type: 'runner', count: 8 }, { type: 'walker', count: 7 }], interval: 0.74, specialBox: true, specialWeapon: 'gatling' }),
     wave({ total: 26, entries: [{ type: 'bomber', count: 8 }, { type: 'tyrant', count: 3 }, { type: 'walker', count: 10 }, { type: 'runner', count: 5 }], interval: 0.72, note: '阶段末压力检查' }),
     wave({ total: 26, entries: [{ type: 'fogger', count: 3 }, { type: 'splitter', count: 2 }, { type: 'bomber', count: 6 }, { type: 'walker', count: 8 }, { type: 'runner', count: 7 }], interval: 0.7, maxAlive: 32, note: '高威胁新种登场' }),
     wave({ total: 28, entries: [{ type: 'fogger', count: 3 }, { type: 'splitter', count: 3 }, { type: 'bomber', count: 8 }, { type: 'tyrant', count: 1 }, { type: 'walker', count: 13 }], interval: 0.67, maxAlive: 32 }),
     wave({ total: 30, entries: [{ type: 'fogger', count: 4 }, { type: 'splitter', count: 3 }, { type: 'bomber', count: 8 }, { type: 'tyrant', count: 2 }, { type: 'walker', count: 7 }, { type: 'runner', count: 6 }], interval: 0.65, maxAlive: 34 }),
     wave({ total: 32, entries: [{ type: 'splitter', count: 4 }, { type: 'bomber', count: 10, groups: ['顶'] }, { type: 'fogger', count: 4 }, { type: 'runner', count: 14 }], interval: 0.62, maxAlive: 34, note: '混合冲锋' }),
     wave({ total: 34, entries: [{ type: 'fogger', count: 4 }, { type: 'splitter', count: 4 }, { type: 'bomber', count: 8 }, { type: 'tyrant', count: 3 }, { type: 'runner', count: 15 }], interval: 0.6, maxAlive: 36, note: '泰坦前哨战' }),
-    wave({ total: 46, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 1 }, { type: 'runner', count: 1 }], interval: 0.6, maxAlive: 36, reinforce: { every: 20, entries: [{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, note: '泰坦 + 无限增援' }),
+    wave({ total: 46, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 1 }, { type: 'runner', count: 1 }], interval: 0.6, maxAlive: 36, reinforce: { every: 20, entries: [{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, specialWeapon: 'rocket', note: '泰坦 + 无限增援' }),
     wave({ total: 36, entries: [{ type: 'bomber', count: 10 }, { type: 'tyrant', count: 3 }, { type: 'splitter', count: 4 }, { type: 'runner', count: 10 }, { type: 'walker', count: 9 }], interval: 0.57, maxAlive: 36, note: '报复性攻势' }),
     wave({ total: 38, entries: [{ type: 'bomber', count: 10 }, { type: 'tyrant', count: 4 }, { type: 'splitter', count: 6 }, { type: 'fogger', count: 6 }, { type: 'runner', count: 12 }], interval: 0.55, maxAlive: 38 }),
     wave({ total: 40, entries: [{ type: 'splitter', count: 6 }, { type: 'bomber', count: 12 }, { type: 'fogger', count: 4 }, { type: 'walker', count: 18 }], interval: 0.52, maxAlive: 38 }),
     wave({ total: 42, entries: [{ type: 'tyrant', count: 5 }, { type: 'bomber', count: 12 }, { type: 'splitter', count: 6 }, { type: 'fogger', count: 7 }, { type: 'runner', count: 12 }], interval: 0.5, maxAlive: 40 }),
-    wave({ total: 52, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 6 }, { type: 'runner', count: 6 }], groups: ['西', '东', '北'], interval: 0.5, maxAlive: 40, reinforce: { every: 20, entries: [{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, note: '双线作战' }),
+    wave({ total: 52, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 6 }, { type: 'runner', count: 6 }], groups: ['西', '东', '北'], interval: 0.5, maxAlive: 40, reinforce: { every: 20, entries: [{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, specialWeapon: 'rocket', note: '双线作战' }),
     wave({ total: 44, entries: [{ type: 'splitter', count: 8 }, { type: 'fogger', count: 5 }, { type: 'bomber', count: 10 }, { type: 'walker', count: 11 }, { type: 'runner', count: 10 }], interval: 0.47, maxAlive: 40, note: '波次密集化' }),
     wave({ total: 46, entries: [{ type: 'bomber', count: 10, groups: ['顶'] }, { type: 'tyrant', count: 4 }, { type: 'splitter', count: 8 }, { type: 'fogger', count: 6 }, { type: 'runner', count: 18 }], interval: 0.45, maxAlive: 42, note: '车顶争夺' }),
     wave({ total: 48, entries: [{ type: 'bomber', count: 12 }, { type: 'tyrant', count: 5 }, { type: 'splitter', count: 8 }, { type: 'fogger', count: 6 }, { type: 'walker', count: 9 }, { type: 'runner', count: 8 }], interval: 0.42, maxAlive: 42, note: '全类型混合' }),
-    wave({ total: 50, entries: [{ type: 'splitter', count: 10 }, { type: 'bomber', count: 12 }, { type: 'fogger', count: 6 }, { type: 'walker', count: 22 }], interval: 0.4, maxAlive: 44, specialBox: true, note: '团灭高发波' }),
+    wave({ total: 50, entries: [{ type: 'splitter', count: 10 }, { type: 'bomber', count: 12 }, { type: 'fogger', count: 6 }, { type: 'walker', count: 22 }], interval: 0.4, maxAlive: 44, specialBox: true, specialWeapon: 'gatling', note: '团灭高发波' }),
     wave({ total: 50, entries: [{ type: 'fogger', count: 6 }, { type: 'splitter', count: 8 }, { type: 'bomber', count: 16 }, { type: 'tyrant', count: 4 }, { type: 'runner', count: 16 }], groups: ['西', '东', '北'], interval: 0.4, maxAlive: 44, note: '北通道启用' }),
     wave({ total: 52, entries: [{ type: 'tyrant', count: 6 }, { type: 'bomber', count: 14 }, { type: 'splitter', count: 6 }, { type: 'walker', count: 14 }, { type: 'runner', count: 12 }], groups: ['西', '东', '北'], interval: 0.38, maxAlive: 45 }),
     wave({ total: 54, entries: [{ type: 'fogger', count: 6 }, { type: 'bomber', count: 14 }, { type: 'splitter', count: 8 }, { type: 'tyrant', count: 5 }, { type: 'walker', count: 12 }, { type: 'runner', count: 9 }], groups: ['西', '东', '北'], interval: 0.38, maxAlive: 45, note: '视野压制波' }),
     wave({ total: 56, entries: [{ type: 'fogger', count: 8 }, { type: 'bomber', count: 16 }, { type: 'splitter', count: 8 }, { type: 'tyrant', count: 6 }, { type: 'runner', count: 18 }], groups: ['西', '东', '北'], interval: 0.36, maxAlive: 45, note: '先破封雾再上顶' }),
-    wave({ total: 60, entries: [{ type: 'bomber', count: 14 }, { type: 'splitter', count: 10 }, { type: 'fogger', count: 8 }, { type: 'tyrant', count: 8 }, { type: 'walker', count: 10 }, { type: 'runner', count: 10 }], groups: ['西', '东', '北', '顶'], interval: 0.35, maxAlive: 45, batches: 4, batchInterval: 5, specialBox: true, note: '小最终关，分 4 批投放' }),
+    wave({ total: 60, entries: [{ type: 'bomber', count: 14 }, { type: 'splitter', count: 10 }, { type: 'fogger', count: 8 }, { type: 'tyrant', count: 8 }, { type: 'walker', count: 10 }, { type: 'runner', count: 10 }], groups: ['西', '东', '北', '顶'], interval: 0.35, maxAlive: 45, batches: 4, batchInterval: 5, specialBox: true, specialWeapon: 'rocket', note: '小最终关，分 4 批投放' }),
     wave({ total: 1, boss: true, bossType: 'megaTitan', entries: [], groups: ['南'], interval: 0.35, maxAlive: 45, reinforce: { every: 18, entries: [{ type: 'bomber', count: 3 }] }, summon: { every: 18, picks: [[{ type: 'bomber', count: 3 }], [{ type: 'runner', count: 4 }]] }, note: '决战' })
   ];
 
@@ -72,12 +72,14 @@
     giant: {
       key: 'giant', name: '巨人城 · 30 波防守', waves: GIANT_WAVES, dataDriven: true,
       intermission: 15, waveScore: 300, noReviveBonus: 100, allowCoins: true, allowSquad: true,
-      revive: { castTime: 3, health: 50, guard: 5, rallyWindow: 20 },
+      dropLife: 20, supplies: true, scoreMultiplied: true,
+      revive: { castTime: 60, health: 50, guard: 5, rallyWindow: 20 },
       banner: { eyebrow: 'GIANT SECTOR / 30 WAVES', title: '守住防线', subtitle: '三十波感染者 · 队友掩护 · 复活币归队' }
     },
     practice: {
       key: 'practice', name: '隔离区 07 · 5 波练习', waves: PRACTICE_WAVES, dataDriven: false,
       intermission: 6, waveScore: 250, noReviveBonus: 0, allowCoins: false, allowSquad: false,
+      dropLife: 35, supplies: false, scoreMultiplied: false,
       revive: null,
       banner: { eyebrow: 'OPERATION / SECTOR 07', title: '守住防线', subtitle: '五波感染者 · 瞄准头部 · 拾取地面补给' }
     }

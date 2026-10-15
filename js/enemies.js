@@ -56,6 +56,19 @@
 
   const GROUND_GROUPS = ['西', '东', '北'];
 
+  // 分离推力写入共享 scratch，避免每怪每步重建闭包与临时对象（原 separate 箭头函数 45 个/帧）。
+  const PUSH = { x: 0, z: 0 };
+  function separation(e, px, pz, opx, opz, orad) {
+    const ox = px - opx, oz = pz - opz;
+    const sep = (e.radius + orad) / 0.88;
+    PUSH.x = 0; PUSH.z = 0;
+    if (ox > sep || ox < -sep || oz > sep || oz < -sep) return;
+    const d2 = ox * ox + oz * oz;
+    if (d2 <= 0.0001 || d2 >= sep * sep) return;
+    const d = Math.sqrt(d2), push = (sep - d) * 2.7 / d;
+    PUSH.x = ox * push; PUSH.z = oz * push;
+  }
+
   function defaultMove(e, ctx) {
     const p = e.root.position, t = ctx.target.position;
     if (ctx.distance <= e.stopAt && e.direct) return [0, 0];
@@ -403,6 +416,11 @@
       this.bellyGeometry = new T.IcosahedronGeometry(0.265, 1);
       this.shadowGeometry = new T.CircleGeometry(0.53, 16);
       this.shadowMaterial = new T.MeshBasicMaterial({ color: 0x142018, transparent: true, opacity: 0.28, depthWrite: false });
+      // M6 距离 LOD：InstancedMesh 与逐怪动画/材质闪烁/射线命中盒冲突，取"距离降细节"方案。
+      // lodNear 外隐藏眼/角/刀刃/披风等装饰，lodFar 外再隐藏地面投影；命中盒与规则完全不变。
+      // 测试可把两阈值调到 1e9 关闭 LOD 做 A/B。
+      this.lodNear = 26;
+      this.lodFar = 52;
       this.ctx = { game, world: game.world, units: null, target: null, distance: 0, E: this, dt: 0 };
     }
 
@@ -483,13 +501,13 @@
         // 眼睛挂在头部子级：头部体积变化（暴君 30%）时五官自动跟随。
         const eye = new T.Mesh(this.cube, eyeMaterial);
         eye.position.set(side * 0.102, 0.036, 0.25); eye.scale.set(0.075, 0.035, 0.023);
-        headMesh.add(eye);
+        headMesh.add(eye); enemy.detail.push(eye);
         if (shape.horn) {
           const horn = new T.Mesh(this.cube, cloth);
           horn.position.set(side * 0.2, 0.16, -0.02); horn.scale.set(0.08, 0.28, 0.08);
           horn.rotation.z = side * 0.5;
           horn.userData.enemy = enemy;
-          headMesh.add(horn);
+          headMesh.add(horn); enemy.detail.push(horn);
         }
         const armGroup = new T.Group(); armGroup.position.set(side * 0.42 * torso, 1.47, 0);
         root.add(armGroup);
@@ -498,7 +516,7 @@
         if (shape.blade) {
           const blade = new T.Mesh(this.cube, eyeMaterial);
           blade.position.set(0, -0.7, 0.16); blade.scale.set(0.05, 0.42, 0.02); blade.rotation.x = 0.4;
-          armGroup.add(blade);
+          armGroup.add(blade); enemy.detail.push(blade);
         }
         enemy.limbs.push(armGroup);
         const legGroup = new T.Group(); legGroup.position.set(side * 0.18 * torso, 0.86, 0);
@@ -510,7 +528,7 @@
       if (shape.cloak) {
         const cape = new T.MeshStandardMaterial({ color: shape.cloth, roughness: 0.96, transparent: true, opacity: 0.85 });
         enemy.cape = cape;
-        part(0, 1.06, -0.24 * torso, 0.68 * torso, 1.02, 0.1, cape);
+        enemy.detail.push(part(0, 1.06, -0.24 * torso, 0.68 * torso, 1.02, 0.1, cape));
       }
       if (shape.belly) {
         const glow = new T.MeshStandardMaterial({ color: shape.skin, roughness: 0.8, emissive: shape.glow || 0x000000, emissiveIntensity: 0.7 });
@@ -550,6 +568,7 @@
         pathClock: Math.random() * 0.2, direct: false, phase: Math.random() * Math.PI * 2,
         knock: new T.Vector3(), fast: stats.fast, type: stats.type, boss: Boolean(stats.boss),
         targetId: 0, aggro: {}, def, behavior: def.behavior || {}, melee: def.melee,
+        detail: [], lodLevel: -1, lodClock: Math.random() * 0.3,
         dashCd: 0, dash: null, fuse: 0, fogCd: def.fog ? def.fog.every : 0, blinkCd: 0,
         // 冲顶自爆（'顶'组投放）改用友方导航层；战场限制只给从'南'组刷出的巨型泰坦。
         topRush: Boolean(def.topRush && entry && entry.group === '顶'),
@@ -664,6 +683,7 @@
       if (unitId === 0) {
         const points = Math.round((enemy.score || 100) * (headshot ? 1.5 : 1));
         this.game.score += points;
+        this.game.killScore += points;
         this.game.kills++;
         if (headshot) this.game.headshots++;
         this.game.ui.kill(headshot, points);
@@ -674,6 +694,7 @@
         const member = this.game.squad && this.game.squad.members[unitId - 1];
         const points = Math.round((enemy.score || 100) * 0.6);
         this.game.score += points;
+        this.game.killScore += points;
         this.game.squadKills++;
         this.game.ui.kill(false, points, `${member ? member.def.name : '队友'} · 队友击杀`);
       }
@@ -747,6 +768,21 @@
         if (Math.abs(u.position.y - p.y) > 2.2) continue;
         if (Math.hypot(u.position.x - p.x, u.position.z - p.z) > radius + u.radius) continue;
         u.takeDamage(damage);
+      }
+    }
+
+    // M5 火箭筒 AoE（玩家侧）：只伤敌人、无衰减、不分爆头，沿用砸地同一套 2.2m 同层门。
+    explode(position, radius, damage, weapon = 'rocket') {
+      this.game.effects.boom(position, radius, 0xffa15c, 0.5);
+      this.game.audio.explosion();
+      for (const e of this.list) {
+        if (e.dead) continue;
+        const p = e.root.position;
+        if (Math.abs(p.y - position.y) > 2.2) continue;
+        if (Math.hypot(p.x - position.x, p.z - position.z) > radius + e.radius) continue;
+        const dir = new T.Vector3(p.x - position.x, 0, p.z - position.z);
+        if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+        this.damage(e, damage, p.clone(), dir.normalize(), false, 0, weapon);
       }
     }
 
@@ -845,6 +881,21 @@
         e.cooldown = Math.max(0, e.cooldown - dt);
         e.attack = Math.max(0, e.attack - dt);
         const p = e.root.position;
+        // 距离 LOD（M6）：装饰件按档位显隐，BOSS 只有 1–2 只全程全细节；命中盒不受影响。
+        if (!e.boss) {
+          e.lodClock -= dt;
+          if (e.lodClock <= 0) {
+            e.lodClock = 0.35;
+            const cam = world.camera.position;
+            const dd = Math.hypot(p.x - cam.x, p.z - cam.z);
+            const level = dd > this.lodFar ? 2 : dd > this.lodNear ? 1 : 0;
+            if (level !== e.lodLevel) {
+              e.lodLevel = level;
+              for (const d of e.detail) d.visible = level === 0;
+              if (e.shadow) e.shadow.visible = level < 2;
+            }
+          }
+        }
         ctx.target = this.unitById(units, e.targetId);
         let dx = ctx.target.position.x - p.x, dz = ctx.target.position.z - p.z;
         ctx.distance = Math.hypot(dx, dz);
@@ -867,22 +918,18 @@
         const mv = e.behavior.move ? e.behavior.move(e, ctx) : defaultMove(e, ctx);
         let mx = mv[0], mz = mv[1];
         // 怪物互相分离，防止挤成一个碰撞体；地图碰撞始终由同一个移动函数处理。
-        const separate = (opx, opz, orad) => {
-          const ox = p.x - opx, oz = p.z - opz;
-          const sep = (e.radius + orad) / 0.88;
-          const d2 = ox * ox + oz * oz;
-          if (d2 > 0.0001 && d2 < sep * sep) {
-            const d = Math.sqrt(d2), push = (sep - d) * 2.7 / d;
-            mx += ox * push; mz += oz * push;
-          }
-        };
         for (const other of this.list) {
           if (other === e || other.dead) continue;
-          separate(other.root.position.x, other.root.position.z, other.radius);
+          const op = other.root.position;
+          separation(e, p.x, p.z, op.x, op.z, other.radius);
+          mx += PUSH.x; mz += PUSH.z;
         }
         if (squad) {
           for (const m of squad.members) {
-            if (!m.dead) separate(m.root.position.x, m.root.position.z, m.radius);
+            if (m.dead) continue;
+            const mp = m.root.position;
+            separation(e, p.x, p.z, mp.x, mp.z, m.radius);
+            mx += PUSH.x; mz += PUSH.z;
           }
         }
         // 地面单位规则：脚底基准恒为 0，斜坡/车顶的 3.2m 顶面对怪物是墙（§5 高台安全）。

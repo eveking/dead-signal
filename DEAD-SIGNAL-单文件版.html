@@ -71,7 +71,27 @@
 
 /* M3 · 雾散体黑雾：玩家身处雾中的视野遮挡（规则层，表现留给 M6 优化） */
 .fog-veil{position:absolute;inset:0;pointer-events:none;z-index:6;background:radial-gradient(ellipse at center,rgba(5,8,7,.34) 0%,rgba(3,6,5,.94) 76%);opacity:0;transition:opacity .12s}
+/* M5 BOSS 血条：泰坦/巨型泰坦登场时显示在波次展示下方，狂暴态转红 */
+.boss-bar{position:absolute;top:112px;left:50%;transform:translateX(-50%);width:380px;display:flex;align-items:center;gap:11px;background:#0e1a16ba;border:1px solid #afca9433;padding:7px 13px;backdrop-filter:blur(5px)}
+.boss-bar>b{font:13px/1 var(--display);letter-spacing:2px;color:#ffb26e;white-space:nowrap}
+.boss-track{flex:1;height:8px;background:#33241f;border:1px solid #ff806e4d}
+.boss-track>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#8fae56,#dcfa86)}
+.boss-bar>span{font:8px var(--mono);letter-spacing:1px;color:#d8c9b6;white-space:nowrap}
+.boss-bar.rage{border-color:#ff5f4f88}
+.boss-bar.rage>b{color:#ff5f4f}
+.boss-bar.rage .boss-track>i{background:linear-gradient(90deg,#b3271b,#ff5f4f)}
+@media(max-width:700px){.boss-bar{width:min(80vw,300px);top:88px;padding:5px 9px}}
 
+/* M6 · 结算面板：爆头率/币耗/用时 + 计分明细 + 队伍存活时长榜（§9） */
+.result-extra{margin-bottom:14px;padding:12px 0}
+.result-breakdown{border:1px solid #afca9433;background:#0e1a1680;padding:9px 12px;margin-bottom:16px;font:9px/1.7 var(--mono);letter-spacing:1px;color:#b9c9ae}
+.result-breakdown b{color:#dcfa86;font-weight:600}
+.result-squad-board{margin-top:8px;border-top:1px dashed #afca9433;padding-top:8px}
+.result-squad-board>small{font-size:7px;letter-spacing:2px;color:#8ea08a}
+.result-squad-board ol{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.result-squad-board li{display:flex;justify-content:space-between;font-size:9px;color:#cfdac5}
+.result-squad-board li em{font-style:normal;color:#8fd0ff}
+@media(max-width:700px){.result-extra{flex-wrap:wrap;gap:8px}}
   </style>
 </head>
 <body>
@@ -136,6 +156,7 @@
       <div class="hud-top-left"><span class="hud-logo">D╱</span><div><b>隔离区 · 07</b><small>OPERATION DEAD SIGNAL</small></div></div>
       <div class="wave-display"><span id="wave-status">准备作战</span><strong id="wave-value">01 <em>/ 05</em></strong><div class="wave-pips" id="wave-pips"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="hud-top-right"><span>SCORE</span><strong id="score-value">00000</strong><small id="remaining-value">等待敌人</small></div>
+      <div id="boss-bar" class="boss-bar" hidden><b id="boss-name">泰坦</b><div class="boss-track"><i id="boss-fill"></i></div><span id="boss-value">6000 / 6000</span></div>
       <div class="minimap-wrap"><div class="minimap-heading"><span>TACTICAL RADAR</span><span>N ↑</span></div><canvas id="minimap" width="180" height="180"></canvas><div class="minimap-footer"><i></i> <span id="radar-count">区域扫描中</span></div></div>
       <div id="squad-panel" class="squad-panel" hidden><span class="hud-caption">SQUAD · TAB 选中 / Q 指令</span><div id="squad-rows"></div></div>
       <div id="killfeed" class="killfeed"></div>
@@ -143,7 +164,7 @@
       <div id="hitmarker" class="hitmarker">×</div>
       <div id="damage-numbers" class="damage-numbers"></div>
       <div id="wave-banner" class="wave-banner" hidden><small id="banner-eyebrow">INCOMING TRANSMISSION</small><strong id="banner-title">第一波</strong><span id="banner-subtitle">守住防线</span></div>
-      <div id="downed" class="downed" hidden><div id="downed-ring" class="downed-ring"><i></i><b id="downed-count">3.0</b></div><div class="downed-copy"><strong>你倒下了</strong><span id="downed-hint">按 E 消耗 1 枚复活币 · 在前线复活点归队</span></div></div>
+      <div id="downed" class="downed" hidden><div id="downed-ring" class="downed-ring"><i></i><b id="downed-count">60</b></div><div class="downed-copy"><strong>你倒下了</strong><span id="downed-hint">按 E 消耗 1 枚复活币 · 在前线复活点归队</span></div></div>
       <div id="rally" class="rally-chip" hidden><kbd>F</kbd><span>归队传送</span><b id="rally-count">20</b></div>
       <div id="toast" class="toast" hidden></div>
       <div id="reload-indicator" class="reload-indicator" hidden><span>装填中</span><div><i id="reload-progress"></i></div></div>
@@ -157,10 +178,10 @@
     <div id="damage-overlay" class="damage-overlay"></div>
     <div id="fog-veil" class="fog-veil" hidden></div>
     <section id="pause" class="modal-overlay" hidden>
-      <div class="modal-panel"><span class="modal-eyebrow">CONNECTION ON HOLD</span><h2>行动暂停<span>TAKE A BREATH.</span></h2><p id="pause-message">战场正在等待。准备好后，继续守住防线。</p><button id="resume-btn" class="primary-button"><span>继续战斗</span><span>↗</span></button><button id="restart-pause-btn" class="secondary-button">重新开始任务</button><div class="modal-controls">WASD 移动 · 鼠标瞄准 · 左键射击<br>空格跳跃 · Shift 疾跑 · R 换弹 · 1 / 2 切枪</div></div>
+      <div class="modal-panel"><span class="modal-eyebrow">CONNECTION ON HOLD</span><h2>行动暂停<span>TAKE A BREATH.</span></h2><p id="pause-message">战场正在等待。准备好后，继续守住防线。</p><button id="resume-btn" class="primary-button"><span>继续战斗</span><span>↗</span></button><button id="restart-pause-btn" class="secondary-button">重新开始任务</button><div class="modal-controls">WASD 移动 · 鼠标瞄准 · 左键射击<br>空格跳跃 · Shift 疾跑 · R 换弹 · 1 / 2 切枪<br>E 复活币归队（濒死时） · F 传送归队（重生窗口内）</div></div>
     </section>
     <section id="result" class="modal-overlay" hidden>
-      <div class="modal-panel result-panel"><span class="modal-eyebrow" id="result-eyebrow">MISSION COMPLETE</span><h2 id="result-title">防线已守住<span>YOU MADE IT.</span></h2><p id="result-description">信号重新接通。隔离区暂时安全了。</p><div class="result-stats"><div><small>最终得分</small><strong id="result-score">0</strong></div><div><small>完成波次</small><strong id="result-wave">5 / 5</strong></div><div><small>击杀 / 爆头击杀</small><strong id="result-kills">0 / 0</strong></div></div><button id="restart-btn" class="primary-button"><span>再次执行任务</span><span>↗</span></button><button id="menu-btn" class="secondary-button">返回指挥中心</button></div>
+      <div class="modal-panel result-panel"><span class="modal-eyebrow" id="result-eyebrow">MISSION COMPLETE</span><h2 id="result-title">防线已守住<span>YOU MADE IT.</span></h2><p id="result-description">信号重新接通。隔离区暂时安全了。</p><div class="result-stats"><div><small>最终得分</small><strong id="result-score">0</strong></div><div><small>到达波次</small><strong id="result-wave">5 / 5</strong></div><div><small>击杀 / 爆头击杀</small><strong id="result-kills">0 / 0</strong></div></div><div class="result-stats result-extra"><div><small>爆头率</small><strong id="result-headshot">0%</strong></div><div id="result-coins-cell"><small>复活币消耗</small><strong id="result-coins">0</strong></div><div><small>用时</small><strong id="result-time">00:00</strong></div></div><div class="result-breakdown" id="result-breakdown" hidden><span id="result-breakdown-text"></span><div class="result-squad-board" id="result-squad-board" hidden><small>队伍存活时长</small><ol id="result-squad-list"></ol></div></div><button id="restart-btn" class="primary-button"><span>再次执行任务</span><span>↗</span></button><button id="menu-btn" class="secondary-button">返回指挥中心</button></div>
     </section>
     <div id="mobile-notice" class="mobile-notice" hidden><b>需要键盘与鼠标</b><span>请在电脑浏览器打开，获得完整的第一人称体验。</span><button id="mobile-dismiss">继续查看场景</button></div>
     <div id="boot" class="boot"><span class="boot-mark">D╱</span><span>INITIALIZING SECTOR 07</span><div></div></div>
@@ -203,7 +224,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
   // 西/东/北/顶四组刷怪点由各套地图自带（world.spawnGroups），波次数据只登记组名。
   function wave(config) {
-    return Object.assign({ interval: 0.6, maxAlive: 30, groups: ['西', '东'], batches: 1, batchInterval: 0, boss: false, specialBox: false, reinforce: null, summon: null }, config);
+    return Object.assign({ interval: 0.6, maxAlive: 30, groups: ['西', '东'], batches: 1, batchInterval: 0, boss: false, specialBox: false, specialWeapon: null, reinforce: null, summon: null }, config);
   }
 
   const GIANT_WAVES = [
@@ -214,28 +235,28 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     wave({ total: 18, entries: [{ type: 'walker', count: 13 }, { type: 'runner', count: 0 }, { type: 'bomber', count: 4 }, { type: 'tyrant', count: 1 }], interval: 0.8, note: '自爆登场' }),
     wave({ total: 20, entries: [{ type: 'walker', count: 11 }, { type: 'bomber', count: 5 }, { type: 'tyrant', count: 2 }, { type: 'runner', count: 2 }], interval: 0.78 }),
     wave({ total: 22, entries: [{ type: 'walker', count: 12 }, { type: 'bomber', count: 6 }, { type: 'tyrant', count: 2 }, { type: 'runner', count: 2 }], groups: ['西', '西', '东'], interval: 0.76, note: '西重' }),
-    wave({ total: 24, entries: [{ type: 'bomber', count: 6 }, { type: 'tyrant', count: 3 }, { type: 'runner', count: 8 }, { type: 'walker', count: 7 }], interval: 0.74, specialBox: true }),
+    wave({ total: 24, entries: [{ type: 'bomber', count: 6 }, { type: 'tyrant', count: 3 }, { type: 'runner', count: 8 }, { type: 'walker', count: 7 }], interval: 0.74, specialBox: true, specialWeapon: 'gatling' }),
     wave({ total: 26, entries: [{ type: 'bomber', count: 8 }, { type: 'tyrant', count: 3 }, { type: 'walker', count: 10 }, { type: 'runner', count: 5 }], interval: 0.72, note: '阶段末压力检查' }),
     wave({ total: 26, entries: [{ type: 'fogger', count: 3 }, { type: 'splitter', count: 2 }, { type: 'bomber', count: 6 }, { type: 'walker', count: 8 }, { type: 'runner', count: 7 }], interval: 0.7, maxAlive: 32, note: '高威胁新种登场' }),
     wave({ total: 28, entries: [{ type: 'fogger', count: 3 }, { type: 'splitter', count: 3 }, { type: 'bomber', count: 8 }, { type: 'tyrant', count: 1 }, { type: 'walker', count: 13 }], interval: 0.67, maxAlive: 32 }),
     wave({ total: 30, entries: [{ type: 'fogger', count: 4 }, { type: 'splitter', count: 3 }, { type: 'bomber', count: 8 }, { type: 'tyrant', count: 2 }, { type: 'walker', count: 7 }, { type: 'runner', count: 6 }], interval: 0.65, maxAlive: 34 }),
     wave({ total: 32, entries: [{ type: 'splitter', count: 4 }, { type: 'bomber', count: 10, groups: ['顶'] }, { type: 'fogger', count: 4 }, { type: 'runner', count: 14 }], interval: 0.62, maxAlive: 34, note: '混合冲锋' }),
     wave({ total: 34, entries: [{ type: 'fogger', count: 4 }, { type: 'splitter', count: 4 }, { type: 'bomber', count: 8 }, { type: 'tyrant', count: 3 }, { type: 'runner', count: 15 }], interval: 0.6, maxAlive: 36, note: '泰坦前哨战' }),
-    wave({ total: 46, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 1 }, { type: 'runner', count: 1 }], interval: 0.6, maxAlive: 36, reinforce: { every: 20, entries: [{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, note: '泰坦 + 无限增援' }),
+    wave({ total: 46, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 1 }, { type: 'runner', count: 1 }], interval: 0.6, maxAlive: 36, reinforce: { every: 20, entries: [{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'walker', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, specialWeapon: 'rocket', note: '泰坦 + 无限增援' }),
     wave({ total: 36, entries: [{ type: 'bomber', count: 10 }, { type: 'tyrant', count: 3 }, { type: 'splitter', count: 4 }, { type: 'runner', count: 10 }, { type: 'walker', count: 9 }], interval: 0.57, maxAlive: 36, note: '报复性攻势' }),
     wave({ total: 38, entries: [{ type: 'bomber', count: 10 }, { type: 'tyrant', count: 4 }, { type: 'splitter', count: 6 }, { type: 'fogger', count: 6 }, { type: 'runner', count: 12 }], interval: 0.55, maxAlive: 38 }),
     wave({ total: 40, entries: [{ type: 'splitter', count: 6 }, { type: 'bomber', count: 12 }, { type: 'fogger', count: 4 }, { type: 'walker', count: 18 }], interval: 0.52, maxAlive: 38 }),
     wave({ total: 42, entries: [{ type: 'tyrant', count: 5 }, { type: 'bomber', count: 12 }, { type: 'splitter', count: 6 }, { type: 'fogger', count: 7 }, { type: 'runner', count: 12 }], interval: 0.5, maxAlive: 40 }),
-    wave({ total: 52, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 6 }, { type: 'runner', count: 6 }], groups: ['西', '东', '北'], interval: 0.5, maxAlive: 40, reinforce: { every: 20, entries: [{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, note: '双线作战' }),
+    wave({ total: 52, boss: true, bossType: 'titan', entries: [{ type: 'walker', count: 6 }, { type: 'runner', count: 6 }], groups: ['西', '东', '北'], interval: 0.5, maxAlive: 40, reinforce: { every: 20, entries: [{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }] }, summon: { every: 20, picks: [[{ type: 'bomber', count: 2 }, { type: 'runner', count: 2 }]] }, specialBox: true, specialWeapon: 'rocket', note: '双线作战' }),
     wave({ total: 44, entries: [{ type: 'splitter', count: 8 }, { type: 'fogger', count: 5 }, { type: 'bomber', count: 10 }, { type: 'walker', count: 11 }, { type: 'runner', count: 10 }], interval: 0.47, maxAlive: 40, note: '波次密集化' }),
     wave({ total: 46, entries: [{ type: 'bomber', count: 10, groups: ['顶'] }, { type: 'tyrant', count: 4 }, { type: 'splitter', count: 8 }, { type: 'fogger', count: 6 }, { type: 'runner', count: 18 }], interval: 0.45, maxAlive: 42, note: '车顶争夺' }),
     wave({ total: 48, entries: [{ type: 'bomber', count: 12 }, { type: 'tyrant', count: 5 }, { type: 'splitter', count: 8 }, { type: 'fogger', count: 6 }, { type: 'walker', count: 9 }, { type: 'runner', count: 8 }], interval: 0.42, maxAlive: 42, note: '全类型混合' }),
-    wave({ total: 50, entries: [{ type: 'splitter', count: 10 }, { type: 'bomber', count: 12 }, { type: 'fogger', count: 6 }, { type: 'walker', count: 22 }], interval: 0.4, maxAlive: 44, specialBox: true, note: '团灭高发波' }),
+    wave({ total: 50, entries: [{ type: 'splitter', count: 10 }, { type: 'bomber', count: 12 }, { type: 'fogger', count: 6 }, { type: 'walker', count: 22 }], interval: 0.4, maxAlive: 44, specialBox: true, specialWeapon: 'gatling', note: '团灭高发波' }),
     wave({ total: 50, entries: [{ type: 'fogger', count: 6 }, { type: 'splitter', count: 8 }, { type: 'bomber', count: 16 }, { type: 'tyrant', count: 4 }, { type: 'runner', count: 16 }], groups: ['西', '东', '北'], interval: 0.4, maxAlive: 44, note: '北通道启用' }),
     wave({ total: 52, entries: [{ type: 'tyrant', count: 6 }, { type: 'bomber', count: 14 }, { type: 'splitter', count: 6 }, { type: 'walker', count: 14 }, { type: 'runner', count: 12 }], groups: ['西', '东', '北'], interval: 0.38, maxAlive: 45 }),
     wave({ total: 54, entries: [{ type: 'fogger', count: 6 }, { type: 'bomber', count: 14 }, { type: 'splitter', count: 8 }, { type: 'tyrant', count: 5 }, { type: 'walker', count: 12 }, { type: 'runner', count: 9 }], groups: ['西', '东', '北'], interval: 0.38, maxAlive: 45, note: '视野压制波' }),
     wave({ total: 56, entries: [{ type: 'fogger', count: 8 }, { type: 'bomber', count: 16 }, { type: 'splitter', count: 8 }, { type: 'tyrant', count: 6 }, { type: 'runner', count: 18 }], groups: ['西', '东', '北'], interval: 0.36, maxAlive: 45, note: '先破封雾再上顶' }),
-    wave({ total: 60, entries: [{ type: 'bomber', count: 14 }, { type: 'splitter', count: 10 }, { type: 'fogger', count: 8 }, { type: 'tyrant', count: 8 }, { type: 'walker', count: 10 }, { type: 'runner', count: 10 }], groups: ['西', '东', '北', '顶'], interval: 0.35, maxAlive: 45, batches: 4, batchInterval: 5, specialBox: true, note: '小最终关，分 4 批投放' }),
+    wave({ total: 60, entries: [{ type: 'bomber', count: 14 }, { type: 'splitter', count: 10 }, { type: 'fogger', count: 8 }, { type: 'tyrant', count: 8 }, { type: 'walker', count: 10 }, { type: 'runner', count: 10 }], groups: ['西', '东', '北', '顶'], interval: 0.35, maxAlive: 45, batches: 4, batchInterval: 5, specialBox: true, specialWeapon: 'rocket', note: '小最终关，分 4 批投放' }),
     wave({ total: 1, boss: true, bossType: 'megaTitan', entries: [], groups: ['南'], interval: 0.35, maxAlive: 45, reinforce: { every: 18, entries: [{ type: 'bomber', count: 3 }] }, summon: { every: 18, picks: [[{ type: 'bomber', count: 3 }], [{ type: 'runner', count: 4 }]] }, note: '决战' })
   ];
 
@@ -252,12 +273,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     giant: {
       key: 'giant', name: '巨人城 · 30 波防守', waves: GIANT_WAVES, dataDriven: true,
       intermission: 15, waveScore: 300, noReviveBonus: 100, allowCoins: true, allowSquad: true,
-      revive: { castTime: 3, health: 50, guard: 5, rallyWindow: 20 },
+      dropLife: 20, supplies: true, scoreMultiplied: true,
+      revive: { castTime: 60, health: 50, guard: 5, rallyWindow: 20 },
       banner: { eyebrow: 'GIANT SECTOR / 30 WAVES', title: '守住防线', subtitle: '三十波感染者 · 队友掩护 · 复活币归队' }
     },
     practice: {
       key: 'practice', name: '隔离区 07 · 5 波练习', waves: PRACTICE_WAVES, dataDriven: false,
       intermission: 6, waveScore: 250, noReviveBonus: 0, allowCoins: false, allowSquad: false,
+      dropLife: 35, supplies: false, scoreMultiplied: false,
       revive: null,
       banner: { eyebrow: 'OPERATION / SECTOR 07', title: '守住防线', subtitle: '五波感染者 · 瞄准头部 · 拾取地面补给' }
     }
@@ -379,8 +402,16 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
   // 脚下一步内允许抬升的高度：中央平台（0.35m）可以直接走上去，车厢/甲板（3.2m）只能靠斜坡上。
   const STEP_UP = 0.42;
+  // 头顶净空：板底高于脚底这么多就只是"能被穿过的桥"，不再当成墙。
+  const HEAD_CLEAR = 1.65;
   // 导航格子的通行半径：地面层与友方层共用，保证没有高度面时两层完全等价。
   const NAV_RADIUS = 0.56;
+  // 四邻方向对 (dx,dz)：流场/梯度每格都要用，共享常量避免热循环里反复分配临时数组。
+  const N4 = [1, 0, -1, 0, 0, 1, 0, -1];
+
+  function openCell(nav, x, z) {
+    return x >= 0 && x < nav.w && z >= 0 && z < nav.h && !nav.blocked[z * nav.w + x];
+  }
 
   DZ.World = class World {
     defMaterial(color, roughness = 0.85, metalness = 0.1) {
@@ -469,6 +500,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.defensePost = bag.defensePost;
       this.bossArena = bag.bossArena;
       this.squadPosts = bag.squadPosts;
+      this.supplyPoints = bag.supplyPoints || [];
+      this.specialBoxPoint = bag.specialBoxPoint || null;
       this.squadStart = bag.squadStart;
       this.playerStart = bag.playerStart;
       this.menuDecor = bag.menuDecor;
@@ -499,11 +532,43 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
 
     // 可行走顶面：只挡视线（blocker）不挡平面通行，阻挡交给 floorAt 的台阶高度规则。
+    // bottom 是板的下表面：实体（车厢 2.5m 厚）bottom 贴近地面，算墙；薄桥面 bottom 高，能被穿过。
     platform(minX, maxX, minZ, maxZ, top, material, thickness = 0.3) {
       const mesh = this.box((minX + maxX) / 2, top - thickness / 2, (minZ + maxZ) / 2,
         maxX - minX, thickness, maxZ - minZ, material);
       this.blockers.push(mesh);
-      this.surfaces.push({ minX, maxX, minZ, maxZ, y: top, kind: 'flat' });
+      this.surfaces.push({ minX, maxX, minZ, maxZ, y: top, bottom: top - thickness, kind: 'flat' });
+      return mesh;
+    }
+
+    // 高架步桥：0.24m 薄板 + 两侧护栏，板底净空 3m 以上，所以地面单位能从桥下走。
+    // 桥面高度只靠台阶限位与相邻顶面相连（车厢顶 3.2 → 桥面 3.6 差 0.4m，仍在 STEP_UP 内）。
+    bridge(minX, maxX, minZ, maxZ, top, options = {}) {
+      const m = this.mat;
+      const thickness = 0.24, rail = 0.55, railT = 0.1;
+      const mesh = this.platform(minX, maxX, minZ, maxZ, top, options.material || m.steel, thickness);
+      const alongX = maxX - minX >= maxZ - minZ;
+      const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+      for (const side of [-1, 1]) {
+        if (alongX) this.box(cx, top + rail / 2 - 0.02, cz + side * (maxZ - minZ) / 2, maxX - minX, rail, railT, m.rust, false, false);
+        else this.box(cx + side * (maxX - minX) / 2, top + rail / 2 - 0.02, cz, railT, rail, maxZ - minZ, m.rust, false, false);
+      }
+      // 防滑横纹 + 端部桥台，读起来是"能走的桥"而不是一块铁板。
+      const span = alongX ? maxX - minX : maxZ - minZ;
+      const steps = Math.max(2, Math.round(span / 1.3));
+      for (let i = 1; i < steps; i++) {
+        const t = -span / 2 + (i / steps) * span;
+        if (alongX) this.box(cx + t, top - thickness / 2 + 0.13, cz, 0.09, thickness + 0.02, (maxZ - minZ) * 0.86, m.black, false, false);
+        else this.box(cx, top - thickness / 2 + 0.13, cz + t, (maxX - minX) * 0.86, thickness + 0.02, 0.09, m.black, false, false);
+      }
+      for (const [x, z] of options.bearings || []) {
+        this.box(x, top - thickness - 0.2, z, 0.34, 0.4, 0.34, m.dark, false, false);
+      }
+      if (options.name) {
+        this.label(options.name, cx, top + 0.95, alongX ? minZ - 0.35 : maxZ + 0.35, 3, 0.42, {
+          rotation: alongX ? 0 : Math.PI / 2, color: '#c3d0a8'
+        });
+      }
       return mesh;
     }
 
@@ -540,7 +605,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       }
       this.surfaces.push({
         minX, maxX, minZ: Math.min(zLow, zHigh), maxZ: Math.max(zLow, zHigh),
-        kind: 'ramp', y: top,
+        kind: 'ramp', y: top, bottom: 0,
         ramp(x, z) { return T.MathUtils.clamp(top * (zLow - z) / (zLow - zHigh), 0, top); }
       });
       return mesh;
@@ -577,14 +642,29 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
 
     // ── 站立高度面 ────────────────────────────────────────────────
-    floorAt(x, z) {
+    // 传 footY（脚底高度）就只认"脚底 + 台阶限位"够得着的顶面：站在 3.6m 桥下的单位仍算 0m 地面，
+    // 不会被头顶的桥面当成悬崖；不传时保持旧语义（全局最高面）。
+    floorAt(x, z, footY = Infinity) {
       let h = 0;
+      const reach = footY + STEP_UP;
       for (const s of this.surfaces) {
         if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
         const v = s.kind === 'ramp' ? s.ramp(x, z) : s.y;
-        if (v > h) h = v;
+        if (v > reach || v <= h) continue;
+        h = v;
       }
       return h;
+    }
+
+    // 该点的顶面是否挡住脚底在 footY 的单位：够不着的顶面里，只有板底压进头顶净空以内的才算墙。
+    blocksAt(x, z, footY) {
+      const limit = footY + STEP_UP, head = footY + HEAD_CLEAR;
+      for (const s of this.surfaces) {
+        if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
+        const v = s.kind === 'ramp' ? s.ramp(x, z) : s.y;
+        if (v > limit && Math.max(s.bottom === undefined ? 0 : s.bottom, 0) < head) return true;
+      }
+      return false;
     }
 
     surfaceY(position, offset = 0) {
@@ -594,20 +674,23 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     canStand(x, z, radius = 0.43, fromY = 0) {
       const b = this.bounds;
       if (x < b.minX + radius || x > b.maxX - radius || z < b.minZ + radius || z > b.maxZ - radius) return false;
+      const reach = fromY + STEP_UP;
       for (const o of this.obstacles) {
+        // 带 top 的箱体（可行走箱顶的集装箱）只在脚底低于箱顶时才是墙。
+        if (o.top !== undefined && reach >= o.top) continue;
         const dx = x - Math.max(o.minX, Math.min(o.maxX, x));
         const dz = z - Math.max(o.minZ, Math.min(o.maxZ, z));
         if (dx * dx + dz * dz < radius * radius) return false;
       }
       // 脚底先落在目标顶面上：脚下高度只取 max(来源, 目标)，斜坡每步只升高一点点，
       // 若按来源高度限位就会被自己的坡度当成墙。
-      const here = this.floorAt(x, z);
-      if (here > fromY + STEP_UP) return false;
-      // 四周采样：脚底要被高出台阶限位的顶面顶住，就当撞上了墙/车厢侧壁。
+      const here = this.floorAt(x, z, fromY);
+      if (here > reach) return false;
+      // 四周采样：撞上的必须是实体（车厢侧壁、集装箱壁、斜坡），薄桥面不算墙。
       const k = radius * 0.72;
-      const limit = Math.max(fromY, here) + STEP_UP;
-      for (const [sx, sz] of [[k, 0], [-k, 0], [0, k], [0, -k]]) {
-        if (this.floorAt(x + sx, z + sz) > limit) return false;
+      const foot = Math.max(fromY, here);
+      for (let s = 0; s < 8; s += 2) {
+        if (this.blocksAt(x + N4[s] * k, z + N4[s + 1] * k, foot)) return false;
       }
       return true;
     }
@@ -637,8 +720,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
 
     // 把单位贴到所在顶面的高度上（玩家用带重力的版本，怪物/队友直接吸附）。
+    // 吸附按自身脚底选层：站在桥下的单位仍贴地面，不会被抬上 3.6m 的桥面。
     settleY(position) {
-      position.y = this.floorAt(position.x, position.z);
+      position.y = this.floorAt(position.x, position.z, position.y || 0);
       return position.y;
     }
 
@@ -675,8 +759,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       }
       while (read < write) {
         const i = queue[read++], x = i % w, z = Math.floor(i / w);
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, nz = z + dz;
+        for (let s = 0; s < 8; s += 2) {
+          const nx = x + N4[s], nz = z + N4[s + 1];
           if (nx < 0 || nx >= w || nz < 0 || nz >= h) continue;
           const ni = nz * w + nx;
           if (!open[ni] || reachable[ni] || Math.abs(floors[ni] - floors[i]) > STEP_UP) continue;
@@ -715,16 +799,24 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const target = this.cell(position, nav);
       if (f.clock > 0 && target === f.cell) return;
       f.clock = 0.3;
-      f.cell = target;
       let seed = target;
       if (nav.blocked[seed]) {
-        let best = Infinity;
-        for (let i = 0; i < nav.blocked.length; ++i) {
-          if (nav.blocked[i]) continue;
-          const d = (i % nav.w - target % nav.w) ** 2 + (Math.floor(i / nav.w) - Math.floor(target / nav.w)) ** 2;
-          if (d < best) { best = d; seed = i; }
+        // 目标格被占：逐环向外找最近可走格（通常 1-2 环命中），20 环内找不到就保留旧场，下个节流周期再试。
+        const tx = target % nav.w, tz = Math.floor(target / nav.w);
+        seed = -1;
+        find: for (let r = 1; r <= 20; r++) {
+          for (let d = -r; d <= r; d++) {
+            if (openCell(nav, tx + d, tz - r)) { seed = (tz - r) * nav.w + tx + d; break find; }
+            if (openCell(nav, tx + d, tz + r)) { seed = (tz + r) * nav.w + tx + d; break find; }
+          }
+          for (let d = -r + 1; d <= r - 1; d++) {
+            if (openCell(nav, tx - r, tz + d)) { seed = (tz + d) * nav.w + tx - r; break find; }
+            if (openCell(nav, tx + r, tz + d)) { seed = (tz + d) * nav.w + tx + r; break find; }
+          }
         }
+        if (seed < 0) return;
       }
+      f.cell = target;
       // 一张共享流场替代每只怪物单独寻路，45 只怪物同屏也只需一次广度优先搜索。
       const distances = f.dist;
       distances.fill(-1);
@@ -733,8 +825,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       nav.queue[write++] = seed;
       while (read < write) {
         const i = nav.queue[read++], x = i % nav.w, z = Math.floor(i / nav.w);
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, nz = z + dz;
+        for (let s = 0; s < 8; s += 2) {
+          const nx = x + N4[s], nz = z + N4[s + 1];
           if (nx < 0 || nx >= nav.w || nz < 0 || nz >= nav.h) continue;
           const ni = nz * nav.w + nx;
           if (nav.blocked[ni] || distances[ni] >= 0) continue;
@@ -754,8 +846,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const cell = this.cell(position, nav), x = cell % nav.w, z = Math.floor(cell / nav.w);
       let best = cell, score = distances[cell];
       if (score < 0) score = 32767;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, nz = z + dz;
+      for (let s = 0; s < 8; s += 2) {
+        const nx = x + N4[s], nz = z + N4[s + 1];
         if (nx < 0 || nx >= nav.w || nz < 0 || nz >= nav.h) continue;
         const index = nz * nav.w + nx;
         if (distances[index] < 0) continue;
@@ -793,9 +885,19 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       }
     }
 
-    container(x, z, w, h, d, mat, text) {
+    container(x, z, w, h, d, mat, text, walkTop = false) {
       this.box(x, h / 2, z, w, h, d, mat, true);
       this.box(x, h + 0.08, z, w + 0.1, 0.16, d + 0.1, this.mat.dark);
+      if (walkTop) {
+        // 箱顶开放：顶面给到盖板上表面，箱体仍是"从地面起的实体"（bottom 0），
+        // 所以地面单位照旧上不来，只有脚底已在箱顶的单位不再被侧壁挡住。
+        const lid = h + 0.16;
+        this.obstacles[this.obstacles.length - 1].top = lid;
+        this.surfaces.push({
+          minX: x - (w + 0.1) / 2, maxX: x + (w + 0.1) / 2,
+          minZ: z - (d + 0.1) / 2, maxZ: z + (d + 0.1) / 2, y: lid, bottom: 0, kind: 'flat'
+        });
+      }
       for (const side of [-1, 1]) {
         for (let i = 0.2; i < w; i += 0.36) this.box(x - w / 2 + i, h / 2, z + side * (d / 2 + 0.025), 0.07, h - 0.2, 0.09, mat);
         for (let i = 0.2; i < d; i += 0.48) this.box(x + side * (w / 2 + 0.025), h / 2, z - d / 2 + i, 0.09, h - 0.2, 0.07, mat);
@@ -1018,7 +1120,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       // §7 巨型泰坦决战战场：火车南段开阔区，南北正好 30m（含斜坡脚下与出发区前沿）。
       bag.bossArena = { minX: -22, maxX: 22, minZ: 14, maxZ: 44 };
       // 尖刀守西通道口、盾卫守中央平台南缘、游骑兵守火车车顶（§4 默认岗位，需要 navAlly 才上得去）。
-      bag.squadPosts = [new T.Vector3(-20.5, 0, -26), new T.Vector3(-3, 0.35, -23), new T.Vector3(0, 3.2, -2)];
+      // 车顶岗位取 z=-7.5：两条横桥带（z -13.5~-11.5 / -3.5~-1.5）会从车顶上方跨过，岗位留在两带之间才不会被抬上桥面。
+      bag.squadPosts = [new T.Vector3(-20.5, 0, -26), new T.Vector3(-3, 0.35, -23), new T.Vector3(0, 3.2, -7.5)];
+      // M5 波间补给固定 4 点位（§8）：中央平台×2、火车侧地面×1、出发区×1。
+      // 点位必须玩家徒步可达：车顶(0,4)canStand 为假，改放在车身东侧平地。
+      // 出发区点取 z=46：bossArena 到 z=44 为止，30 波决战的巨型泰坦踩不到补给位。
+      bag.supplyPoints = [new T.Vector3(-4.5, 0, -24), new T.Vector3(4.5, 0, -32), new T.Vector3(7, 0, 4), new T.Vector3(0, 0, 46)];
+      // 特殊武器箱固定投放位：中央平台中心（8/24/29 波开局用；15/20 波泰坦必掉用泰坦死亡位置）。
+      bag.specialBoxPoint = new T.Vector3(0, 0, -28);
 
       this.buildGiantLights();
       this.groundPlane(240, 34);
@@ -1026,6 +1135,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.buildGiantPlatform();
       this.buildGiantTrain();
       this.buildGiantCover();
+      this.buildGiantBridges();
       this.buildGiantStaging();
       this.markSpawns(bag.spawnPoints);
       this.markRevivePoints(bag.revivePoints);
@@ -1155,13 +1265,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
     buildGiantCover() {
       const m = this.mat;
-      // 掩体区：车厢两侧的集装箱带，通道内侧留 8m 射界。
-      this.container(-13, 2, 4, 3.3, 9, m.orange, 'CARGO / 024');
-      this.container(13, -6, 4, 3.35, 9, m.green, 'B-07');
-      this.container(-13, -14, 4, 3.2, 6, m.steel, 'QUARANTINE');
-      this.container(13, -14, 4, 3.2, 6, m.green, '07 / HAZARD');
-      this.container(-13, 20, 4, 3.3, 7, m.green, 'SUPPLY 07');
-      this.container(13, 22, 4, 3.3, 7, m.orange, 'HAZARD MAT');
+      // 掩体区：车厢两侧的集装箱带，通道内侧留 8m 射界；六只箱的箱顶开放，交给栈桥连成高台路线。
+      this.container(-13, 2, 4, 3.3, 9, m.orange, 'CARGO / 024', true);
+      this.container(13, -6, 4, 3.35, 9, m.green, 'B-07', true);
+      this.container(-13, -14, 4, 3.2, 6, m.steel, 'QUARANTINE', true);
+      this.container(13, -14, 4, 3.2, 6, m.green, '07 / HAZARD', true);
+      this.container(-13, 20, 4, 3.3, 7, m.green, 'SUPPLY 07', true);
+      this.container(13, 22, 4, 3.3, 7, m.orange, 'HAZARD MAT', true);
       this.crate(-17, -8, 1.6);
       this.crate(17.2, 4, 1.5);
       this.crate(-17.5, 12, 1.35);
@@ -1176,6 +1286,27 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       for (const [x, z] of [[-20.5, -12], [20.5, -10], [-20.5, 6], [20.5, 18]]) {
         this.box(x, 1.37, z, 2.6, 0.1, 1.18, m.yellow);
       }
+    }
+
+    // 箱顶栈道 + 跨中央通道横桥（桥面 3.6m）。上桥路线沿用南端两条 15° 斜坡：
+    // 斜坡 → 装载甲板(3.2) → 车厢顶(3.2) → 横桥(3.6，0.4m 台阶) → 箱顶(3.36/3.46/3.51)。
+    // 怪物按 fromY=0 的地面单位规则依旧上不来，但薄板桥下 3.36m 净空可以从容穿过。
+    buildGiantBridges() {
+      const m = this.mat;
+      const deck = 3.6, walk = 3.62;
+      // 纵向连桥盖住同侧箱与箱之间的空隙：栈道上绝不允许留下 3.4m 深的断口（掉下去就爬不回来）。
+      // 与横桥的接头抬高 2cm，避免两层共面顶面在接缝处闪 z-fighting。
+      this.bridge(-14.1, -11.9, -11.5, -2, walk, { material: m.dark, name: 'WALKWAY W-1' });
+      this.bridge(-14.1, -11.9, 6, 17, walk, { material: m.dark, name: 'WALKWAY W-2' });
+      this.bridge(11.9, 14.1, -11.4, -10.2, walk, { material: m.dark });
+      this.bridge(11.9, 14.1, -2, 19, walk, { material: m.dark, name: 'WALKWAY E-2' });
+      // 两座横桥在中段落到车厢顶上，桥墩直接压在车顶钢板；两端各伸进箱顶 1m 以上保证连续。
+      this.bridge(-12, 12, -13.5, -11.5, deck, {
+        material: m.steel, name: 'CROSSBRIDGE W1', bearings: [[-3.4, -12.5], [0, -12.5], [3.4, -12.5]]
+      });
+      this.bridge(-12, 12, -3.5, -1.5, deck, {
+        material: m.steel, name: 'CROSSBRIDGE W2', bearings: [[-3.4, -2.5], [0, -2.5], [3.4, -2.5]]
+      });
     }
 
     buildGiantStaging() {
@@ -1249,6 +1380,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     render() { this.renderer.render(this.scene, this.camera); }
   };
 })();
+
   </script>
   <script>
 (function () {
@@ -1612,15 +1744,17 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (this.stagger > 0) { x = 0; z = 0; this.jumpQueued = false; }
       this.moving = x !== 0 || z !== 0;
       this.sprinting = this.moving && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && !this.shooting;
-      const speed = this.sprinting ? 7.3 : 4.5;
+      // M5 加特林减益（§8）：持枪期间走/跑同乘 ×0.6，禁止跳跃；切回步枪即解除。
+      const heavy = this.game.weapons.heavy;
+      const speed = (this.sprinting ? 7.3 : 4.5) * (heavy ? 0.6 : 1);
       const length = Math.hypot(x, z) || 1;
       x = x / length * speed * dt;
       z = z / length * speed * dt;
       const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
       this.game.world.move(this.position, x * cos + z * sin, -x * sin + z * cos, 0.38);
       // 脚底支撑面：平地/中央平台/车顶/斜坡都用同一个高度，落地判定不再写死 y=0。
-      const floor = this.game.world.floorAt(this.position.x, this.position.z);
-      if (this.jumpQueued && this.grounded) {
+      const floor = this.game.world.floorAt(this.position.x, this.position.z, this.position.y);
+      if (this.jumpQueued && this.grounded && !heavy) {
         this.velocityY = 6.2;
         this.grounded = false;
       }
@@ -1670,7 +1804,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (game.state !== 'playing' || this.downed || this.invulnerable > 0) return;
       DZ.knockPosition(game.world, this.position, dx, dz, distance, 0.38);
       // 被推出台沿时保留高度自由落体（打进车顶下方同理），仍站在同层或更高顶面才贴地。
-      const floor = game.world.floorAt(this.position.x, this.position.z);
+      const floor = game.world.floorAt(this.position.x, this.position.z, this.position.y);
       this.velocityY = 0;
       if (this.position.y > floor + 0.02) {
         this.grounded = false;
@@ -1685,7 +1819,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
     get reviveConfig() { return this.game.waveMode.revive; }
 
-    // 倒地：有币则进入 3 秒濒死读条；无币（含硬核 0 币开局）或不启用复活币的模式直接失败。
+    // 倒地：有币则进入濒死读条（时长取 revive.castTime）；无币（含硬核 0 币开局）或不启用复活币的模式直接失败。
     goDowned() {
       const game = this.game;
       const config = this.reviveConfig;
@@ -1696,6 +1830,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.rallyWindow = 0;
       this.clearInput();
       this.velocityY = 0;
+      game.weapons.dropSpecial();
       game.weapons.view.visible = false;
       game.audio.downed();
       game.ui.showDowned(true);
@@ -1744,6 +1879,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (!this.downed || game.coins <= 0) return;
       game.coins--;
       game.coinsUsed++;
+      // 本波耗币标记：波次结算时该波失去"无复活 +100"（§9）。
+      game.waveCoins++;
       const config = this.reviveConfig;
       this.downed = false;
       this.downedRemaining = 0;
@@ -1816,6 +1953,16 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         ammo: new T.MeshStandardMaterial({ color: 0xa68646, emissive: 0x443719, roughness: 0.65 })
       };
       this.symbolMaterial = new T.MeshBasicMaterial({ color: 0xdafa98 });
+      // M5 补给与特殊武器：补给箱独立于击杀掉落（同屏上限 8，寿命显示到波末/倒数秒）。
+      this.supplies = [];
+      this.supplyLimit = 8;
+      this.supplyBox = new T.BoxGeometry(0.66, 0.46, 0.46);
+      this.supplyRing = new T.TorusGeometry(0.6, 0.02, 4, 28);
+      this.supplyMaterials = {
+        health: new T.MeshStandardMaterial({ color: 0x4c7f5c, emissive: 0x2f7a45, roughness: 0.6 }),
+        ammo: new T.MeshStandardMaterial({ color: 0x9c7c3c, emissive: 0x8a6a20, roughness: 0.6 })
+      };
+      this.weaponMaterial = new T.MeshStandardMaterial({ color: 0x46586e, emissive: 0x24344e, roughness: 0.55, metalness: 0.4 });
       // M3 雾散体黑雾：半透明体积团，规则先行（fogDensity 供视野/小地图/队友命中判定）。
       this.fogs = [];
       this.fogLimit = 12;
@@ -1826,12 +1973,57 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.warns = [];
     }
 
+    // 只有巨人城模式在箱体上浮字显示剩余寿命；练习模式外观零变化（菜单换模式后 waveMode 会变，取实时值）。
+    get labelMode() { return Boolean(this.game.waveMode && this.game.waveMode.supplies); }
+
+    // 寿命浮字：96×40 canvas 贴到 Sprite 上，文本没变不重绘，每秒最多刷新一次。
+    makeLabel() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 96; canvas.height = 40;
+      const texture = new T.CanvasTexture(canvas);
+      const sprite = new T.Sprite(new T.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+      sprite.scale.set(0.62, 0.26, 1);
+      sprite.position.y = 0.86;
+      sprite.renderOrder = 900;
+      return { canvas, ctx: canvas.getContext('2d'), texture, sprite, text: null };
+    }
+
+    setLabel(label, text) {
+      if (!label || label.text === text) return;
+      label.text = text;
+      const ctx = label.ctx;
+      ctx.clearRect(0, 0, 96, 40);
+      ctx.font = 'bold 26px Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(8, 14, 11, 0.72)';
+      ctx.fillRect(0, 0, 96, 40);
+      ctx.strokeStyle = 'rgba(219, 250, 134, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, 94, 38);
+      ctx.fillStyle = '#dcfa86';
+      ctx.fillText(text, 48, 21);
+      label.texture.needsUpdate = true;
+    }
+
+    removeLabel(label) {
+      if (!label) return;
+      label.sprite.material.dispose();
+      label.texture.dispose();
+    }
+
     fog(position, radius, life) {
       if (this.fogs.length >= this.fogLimit) this.removeFog(0);
       const root = new T.Group();
-      const base = this.game.world.floorAt(position.x, position.z);
+      const base = this.game.world.floorAt(position.x, position.z, position.y || 0);
       root.position.set(position.x, base, position.z);
       const material = new T.MeshBasicMaterial({ color: 0x0d1211, transparent: true, opacity: 0, depthWrite: false });
+      // M6 表现（M3a 留的调平项）：体团 opacity 0.82→0.5，贴地层用径向 alphaMap 羽化边缘。
+      // 规则层 fogDensity 不变——视野遮罩、小地图失效与队友减伤仍读同一个函数。
+      const edgeMaterial = new T.MeshBasicMaterial({
+        color: 0x0d1211, transparent: true, opacity: 0, depthWrite: false,
+        alphaMap: this.fogEdgeTexture || (this.fogEdgeTexture = this.makeFogEdge())
+      });
       const body = new T.Mesh(this.fogShell, material);
       body.position.y = radius * 0.42;
       body.scale.set(radius * 0.78, radius * 0.5, radius * 0.78);
@@ -1842,19 +2034,34 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         puff.scale.setScalar(radius * size);
         root.add(puff);
       }
-      const skirt = new T.Mesh(this.fogDisc, material);
+      const skirt = new T.Mesh(this.fogDisc, edgeMaterial);
       skirt.rotation.x = -Math.PI / 2;
       skirt.position.y = 0.04;
       skirt.scale.setScalar(radius);
       root.add(skirt);
       this.game.world.scene.add(root);
-      this.fogs.push({ root, material, position: new T.Vector3(position.x, 0, position.z), radius, life, maxLife: life });
+      this.fogs.push({ root, material, edgeMaterial, position: new T.Vector3(position.x, 0, position.z), radius, life, maxLife: life });
+    }
+
+    // 径向渐变贴地纹理：中心实心、外圈全透明，一次生成全场共用。
+    makeFogEdge() {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.55, '#ffffff');
+      grad.addColorStop(1, '#000000');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      return new T.CanvasTexture(canvas);
     }
 
     removeFog(index) {
       const fog = this.fogs[index];
       this.game.world.scene.remove(fog.root);
       fog.material.dispose();
+      if (fog.edgeMaterial) fog.edgeMaterial.dispose();
       this.fogs.splice(index, 1);
     }
 
@@ -1872,7 +2079,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
 
     boom(position, radius, color = 0xffb257, life = 0.45) {
-      const base = this.game.world.floorAt(position.x, position.z);
+      const base = this.game.world.floorAt(position.x, position.z, position.y || 0);
       const mesh = new T.Mesh(this.blowRing, new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: T.DoubleSide, depthWrite: false }));
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(position.x, base + 0.06, position.z);
@@ -1902,7 +2109,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     warn(position, radius, duration) {
       const material = new T.MeshBasicMaterial({ color: 0xd2352a, transparent: true, opacity: 0.24, side: T.DoubleSide, depthWrite: false });
       const root = new T.Group();
-      root.position.set(position.x, this.game.world.floorAt(position.x, position.z) + 0.05, position.z);
+      root.position.set(position.x, this.game.world.floorAt(position.x, position.z, position.y || 0) + 0.05, position.z);
       const fill = new T.Mesh(this.fogDisc, material);
       fill.rotation.x = -Math.PI / 2;
       const edge = new T.Mesh(this.blowRing, material);
@@ -1960,12 +2167,16 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       trace.line.material.opacity = 0.65;
     }
 
-    drop(position, type) {
+    // type: 'health' | 'ammo' | 'rocket' | 'gatling'；options.life 缺省读模式 dropLife（巨人城 20s、练习 35s）。
+    drop(position, type, options = {}) {
       if (this.drops.length >= 12) this.removeDrop(0);
+      const weapon = type === 'rocket' || type === 'gatling';
+      const life = options.life != null ? options.life :
+        (weapon ? Infinity : Math.max(1, (this.game.waveMode || {}).dropLife || 35));
       const root = new T.Group();
-      const base = this.game.world.floorAt(position.x, position.z);
+      const base = this.game.world.floorAt(position.x, position.z, position.y || 0);
       root.position.set(position.x, base + 0.48, position.z);
-      const box = new T.Mesh(this.dropBox, this.dropMaterials[type]);
+      const box = new T.Mesh(weapon ? this.supplyBox : this.dropBox, weapon ? this.weaponMaterial : this.dropMaterials[type]);
       root.add(box);
       const symbol = (x, y, z, w, h, d) => {
         const part = new T.Mesh(this.symbolBox, this.symbolMaterial);
@@ -1974,19 +2185,79 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (type === 'health') {
         symbol(0, 0, 0.211, 0.26, 0.075, 0.018);
         symbol(0, 0, 0.211, 0.075, 0.26, 0.02);
+      } else if (weapon) {
+        // 枪形剪影：火箭筒=长管+战斗部，加特林=三排短管。
+        if (type === 'rocket') {
+          symbol(0, 0.06, 0.21, 0.09, 0.09, 0.42);
+          symbol(0, 0.06, 0.02, 0.14, 0.14, 0.08);
+          symbol(0, -0.08, 0.14, 0.06, 0.12, 0.06);
+        } else {
+          for (const x of [-0.1, 0, 0.1]) symbol(x, 0.06, 0.2, 0.05, 0.05, 0.34);
+          symbol(0, 0.06, 0.02, 0.26, 0.18, 0.1);
+        }
       } else {
         for (const x of [-0.13, 0, 0.13]) symbol(x, 0, 0.211, 0.055, 0.24, 0.018);
       }
       const ring = new T.Mesh(this.dropRing, this.symbolMaterial);
       ring.rotation.x = -Math.PI / 2; ring.position.y = -0.35;
       root.add(ring);
+      const label = this.labelMode ? this.makeLabel() : null;
+      if (label) { root.add(label.sprite); this.setLabel(label, weapon || options.waveEnd ? '波末' : String(Math.ceil(life))); }
       this.game.world.scene.add(root);
-      this.drops.push({ root, type, life: 35, base });
+      this.drops.push({ root, type, life, base, weapon, waveEnd: Boolean(options.waveEnd || weapon), label });
     }
 
     removeDrop(index) {
-      this.game.world.scene.remove(this.drops[index].root);
+      const drop = this.drops[index];
+      this.removeLabel(drop.label);
+      this.game.world.scene.remove(drop.root);
       this.drops.splice(index, 1);
+    }
+
+    // 波末过期的箱（特殊武器箱/倒地掉落）：波次结算时未拾取即消失；普通击杀掉落仍走自然寿命。
+    expireWaveDrops() {
+      for (let i = this.drops.length - 1; i >= 0; --i) {
+        if (this.drops[i].waveEnd) this.removeDrop(i);
+      }
+    }
+
+    // M5 波间补给箱：固定点位点亮，弹药/医疗两种，同屏上限 8（超出丢最旧）。
+    spawnSupply(point, kind) {
+      if (this.supplies.length >= this.supplyLimit) this.removeSupply(0);
+      const root = new T.Group();
+      const base = this.game.world.floorAt(point.x, point.z, point.y || 0);
+      root.position.set(point.x, base + 0.5, point.z);
+      const box = new T.Mesh(this.supplyBox, this.supplyMaterials[kind]);
+      root.add(box);
+      const symbol = (x, y, z, w, h, d) => {
+        const part = new T.Mesh(this.symbolBox, this.symbolMaterial);
+        part.position.set(x, y, z); part.scale.set(w, h, d); root.add(part);
+      };
+      if (kind === 'health') {
+        symbol(0, 0, 0.241, 0.3, 0.08, 0.018);
+        symbol(0, 0, 0.241, 0.08, 0.3, 0.02);
+      } else {
+        for (const x of [-0.15, 0, 0.15]) symbol(x, 0, 0.241, 0.06, 0.26, 0.018);
+      }
+      const ring = new T.Mesh(this.supplyRing, this.symbolMaterial);
+      ring.rotation.x = -Math.PI / 2; ring.position.y = -0.38;
+      root.add(ring);
+      const label = this.makeLabel();
+      root.add(label.sprite);
+      this.setLabel(label, '0');
+      this.game.world.scene.add(root);
+      this.supplies.push({ root, kind, base, label });
+    }
+
+    removeSupply(index) {
+      const supply = this.supplies[index];
+      this.removeLabel(supply.label);
+      this.game.world.scene.remove(supply.root);
+      this.supplies.splice(index, 1);
+    }
+
+    expireSupplies() {
+      while (this.supplies.length) this.removeSupply(0);
     }
 
     update(dt) {
@@ -1997,7 +2268,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           p.life = Math.max(0, p.life - dt);
           p.v.y -= p.gravity * dt;
           p.p.addScaledVector(p.v, dt);
-          const floor = this.game.world.floorAt(p.p.x, p.p.z) + 0.025;
+          const floor = this.game.world.floorAt(p.p.x, p.p.z, p.p.y) + 0.025;
           if (p.p.y < floor) { p.p.y = floor; p.v.y *= -0.28; p.v.x *= 0.7; p.v.z *= 0.7; }
           this.dummy.position.copy(p.p);
           this.dummy.rotation.set(p.life * 8, p.life * 4, 0);
@@ -2017,7 +2288,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         fog.life -= dt;
         if (fog.life <= 0) { this.removeFog(i); continue; }
         const fade = Math.min(1, (fog.maxLife - fog.life) / 0.6, fog.life / 1);
-        fog.material.opacity = 0.82 * fade;
+        fog.material.opacity = 0.5 * fade;
+        if (fog.edgeMaterial) fog.edgeMaterial.opacity = 0.78 * fade;
         const breathe = 1 + Math.sin(this.time * 1.6 + i) * 0.03;
         fog.root.rotation.y += dt * 0.22;
         fog.root.scale.set(breathe, 1, breathe);
@@ -2045,19 +2317,50 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         drop.root.position.y = drop.base + 0.47 + Math.sin(this.time * 3 + i) * 0.1;
         drop.root.visible = drop.life > 5 || Math.sin(this.time * 12) > 0;
         if (drop.life <= 0) { this.removeDrop(i); continue; }
+        if (drop.label) {
+          if (drop.waveEnd) this.setLabel(drop.label, '波末');
+          else this.setLabel(drop.label, String(Math.max(1, Math.ceil(drop.life))));
+        }
         const d = Math.hypot(player.position.x - drop.root.position.x, player.position.z - drop.root.position.z);
         // 补给跟着所在顶面浮动：脚底与补给不同层的玩家够不到。
         if (d > 1.45 || Math.abs(player.position.y - drop.base) > 1.2) continue;
+        if (drop.weapon) {
+          this.game.weapons.grantSpecial(drop.type);
+          this.game.audio.pickup();
+          this.removeDrop(i);
+          continue;
+        }
         if (drop.type === 'health' && player.health === 100) continue;
         if (drop.type === 'health') { player.heal(30); this.game.ui.toast('医疗补给 · 生命值 +30'); }
         else { this.game.weapons.addAmmo(60, 24); this.game.ui.toast('弹药补给 · 步枪 +60 / 手枪 +24'); }
         this.game.audio.pickup();
         this.removeDrop(i);
       }
+      // 波间补给箱：玩家用与掉落一致的拾取半径；间歇期浮字显示下一波倒数，波进行中显示'波末'。
+      for (let i = this.supplies.length - 1; i >= 0; --i) {
+        const supply = this.supplies[i];
+        supply.root.rotation.y += dt * 1.1;
+        supply.root.position.y = supply.base + 0.49 + Math.sin(this.time * 2.6 + i) * 0.08;
+        this.setLabel(supply.label, this.game.wavePhase === 'intermission' ?
+          String(Math.max(1, Math.ceil(this.game.nextWaveIn))) : '波末');
+        const d = Math.hypot(player.position.x - supply.root.position.x, player.position.z - supply.root.position.z);
+        if (d > 1.45 || Math.abs(player.position.y - supply.base) > 1.2) continue;
+        if (supply.kind === 'health') {
+          if (player.health === 100) continue;
+          player.heal(35);
+          this.game.ui.toast('医疗箱 · 生命值 +35');
+        } else {
+          this.game.weapons.addAmmo(90, 36);
+          this.game.ui.toast('弹药箱 · 步枪 +90 / 手枪 +36');
+        }
+        this.game.audio.pickup();
+        this.removeSupply(i);
+      }
     }
 
     reset() {
       while (this.drops.length) this.removeDrop(0);
+      while (this.supplies.length) this.removeSupply(0);
       while (this.fogs.length) this.removeFog(0);
       while (this.blows.length) this.removeBlow(0);
       while (this.warns.length) this.removeWarn(0);
@@ -2129,6 +2432,19 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   const FAST_COLORS = { skin: 0x8c7350, cloth: 0x67452f };
 
   const GROUND_GROUPS = ['西', '东', '北'];
+
+  // 分离推力写入共享 scratch，避免每怪每步重建闭包与临时对象（原 separate 箭头函数 45 个/帧）。
+  const PUSH = { x: 0, z: 0 };
+  function separation(e, px, pz, opx, opz, orad) {
+    const ox = px - opx, oz = pz - opz;
+    const sep = (e.radius + orad) / 0.88;
+    PUSH.x = 0; PUSH.z = 0;
+    if (ox > sep || ox < -sep || oz > sep || oz < -sep) return;
+    const d2 = ox * ox + oz * oz;
+    if (d2 <= 0.0001 || d2 >= sep * sep) return;
+    const d = Math.sqrt(d2), push = (sep - d) * 2.7 / d;
+    PUSH.x = ox * push; PUSH.z = oz * push;
+  }
 
   function defaultMove(e, ctx) {
     const p = e.root.position, t = ctx.target.position;
@@ -2477,6 +2793,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.bellyGeometry = new T.IcosahedronGeometry(0.265, 1);
       this.shadowGeometry = new T.CircleGeometry(0.53, 16);
       this.shadowMaterial = new T.MeshBasicMaterial({ color: 0x142018, transparent: true, opacity: 0.28, depthWrite: false });
+      // M6 距离 LOD：InstancedMesh 与逐怪动画/材质闪烁/射线命中盒冲突，取"距离降细节"方案。
+      // lodNear 外隐藏眼/角/刀刃/披风等装饰，lodFar 外再隐藏地面投影；命中盒与规则完全不变。
+      // 测试可把两阈值调到 1e9 关闭 LOD 做 A/B。
+      this.lodNear = 26;
+      this.lodFar = 52;
       this.ctx = { game, world: game.world, units: null, target: null, distance: 0, E: this, dt: 0 };
     }
 
@@ -2557,13 +2878,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         // 眼睛挂在头部子级：头部体积变化（暴君 30%）时五官自动跟随。
         const eye = new T.Mesh(this.cube, eyeMaterial);
         eye.position.set(side * 0.102, 0.036, 0.25); eye.scale.set(0.075, 0.035, 0.023);
-        headMesh.add(eye);
+        headMesh.add(eye); enemy.detail.push(eye);
         if (shape.horn) {
           const horn = new T.Mesh(this.cube, cloth);
           horn.position.set(side * 0.2, 0.16, -0.02); horn.scale.set(0.08, 0.28, 0.08);
           horn.rotation.z = side * 0.5;
           horn.userData.enemy = enemy;
-          headMesh.add(horn);
+          headMesh.add(horn); enemy.detail.push(horn);
         }
         const armGroup = new T.Group(); armGroup.position.set(side * 0.42 * torso, 1.47, 0);
         root.add(armGroup);
@@ -2572,7 +2893,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         if (shape.blade) {
           const blade = new T.Mesh(this.cube, eyeMaterial);
           blade.position.set(0, -0.7, 0.16); blade.scale.set(0.05, 0.42, 0.02); blade.rotation.x = 0.4;
-          armGroup.add(blade);
+          armGroup.add(blade); enemy.detail.push(blade);
         }
         enemy.limbs.push(armGroup);
         const legGroup = new T.Group(); legGroup.position.set(side * 0.18 * torso, 0.86, 0);
@@ -2584,7 +2905,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (shape.cloak) {
         const cape = new T.MeshStandardMaterial({ color: shape.cloth, roughness: 0.96, transparent: true, opacity: 0.85 });
         enemy.cape = cape;
-        part(0, 1.06, -0.24 * torso, 0.68 * torso, 1.02, 0.1, cape);
+        enemy.detail.push(part(0, 1.06, -0.24 * torso, 0.68 * torso, 1.02, 0.1, cape));
       }
       if (shape.belly) {
         const glow = new T.MeshStandardMaterial({ color: shape.skin, roughness: 0.8, emissive: shape.glow || 0x000000, emissiveIntensity: 0.7 });
@@ -2624,6 +2945,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         pathClock: Math.random() * 0.2, direct: false, phase: Math.random() * Math.PI * 2,
         knock: new T.Vector3(), fast: stats.fast, type: stats.type, boss: Boolean(stats.boss),
         targetId: 0, aggro: {}, def, behavior: def.behavior || {}, melee: def.melee,
+        detail: [], lodLevel: -1, lodClock: Math.random() * 0.3,
         dashCd: 0, dash: null, fuse: 0, fogCd: def.fog ? def.fog.every : 0, blinkCd: 0,
         // 冲顶自爆（'顶'组投放）改用友方导航层；战场限制只给从'南'组刷出的巨型泰坦。
         topRush: Boolean(def.topRush && entry && entry.group === '顶'),
@@ -2738,6 +3060,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (unitId === 0) {
         const points = Math.round((enemy.score || 100) * (headshot ? 1.5 : 1));
         this.game.score += points;
+        this.game.killScore += points;
         this.game.kills++;
         if (headshot) this.game.headshots++;
         this.game.ui.kill(headshot, points);
@@ -2748,6 +3071,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         const member = this.game.squad && this.game.squad.members[unitId - 1];
         const points = Math.round((enemy.score || 100) * 0.6);
         this.game.score += points;
+        this.game.killScore += points;
         this.game.squadKills++;
         this.game.ui.kill(false, points, `${member ? member.def.name : '队友'} · 队友击杀`);
       }
@@ -2821,6 +3145,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         if (Math.abs(u.position.y - p.y) > 2.2) continue;
         if (Math.hypot(u.position.x - p.x, u.position.z - p.z) > radius + u.radius) continue;
         u.takeDamage(damage);
+      }
+    }
+
+    // M5 火箭筒 AoE（玩家侧）：只伤敌人、无衰减、不分爆头，沿用砸地同一套 2.2m 同层门。
+    explode(position, radius, damage, weapon = 'rocket') {
+      this.game.effects.boom(position, radius, 0xffa15c, 0.5);
+      this.game.audio.explosion();
+      for (const e of this.list) {
+        if (e.dead) continue;
+        const p = e.root.position;
+        if (Math.abs(p.y - position.y) > 2.2) continue;
+        if (Math.hypot(p.x - position.x, p.z - position.z) > radius + e.radius) continue;
+        const dir = new T.Vector3(p.x - position.x, 0, p.z - position.z);
+        if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+        this.damage(e, damage, p.clone(), dir.normalize(), false, 0, weapon);
       }
     }
 
@@ -2919,6 +3258,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         e.cooldown = Math.max(0, e.cooldown - dt);
         e.attack = Math.max(0, e.attack - dt);
         const p = e.root.position;
+        // 距离 LOD（M6）：装饰件按档位显隐，BOSS 只有 1–2 只全程全细节；命中盒不受影响。
+        if (!e.boss) {
+          e.lodClock -= dt;
+          if (e.lodClock <= 0) {
+            e.lodClock = 0.35;
+            const cam = world.camera.position;
+            const dd = Math.hypot(p.x - cam.x, p.z - cam.z);
+            const level = dd > this.lodFar ? 2 : dd > this.lodNear ? 1 : 0;
+            if (level !== e.lodLevel) {
+              e.lodLevel = level;
+              for (const d of e.detail) d.visible = level === 0;
+              if (e.shadow) e.shadow.visible = level < 2;
+            }
+          }
+        }
         ctx.target = this.unitById(units, e.targetId);
         let dx = ctx.target.position.x - p.x, dz = ctx.target.position.z - p.z;
         ctx.distance = Math.hypot(dx, dz);
@@ -2941,22 +3295,18 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         const mv = e.behavior.move ? e.behavior.move(e, ctx) : defaultMove(e, ctx);
         let mx = mv[0], mz = mv[1];
         // 怪物互相分离，防止挤成一个碰撞体；地图碰撞始终由同一个移动函数处理。
-        const separate = (opx, opz, orad) => {
-          const ox = p.x - opx, oz = p.z - opz;
-          const sep = (e.radius + orad) / 0.88;
-          const d2 = ox * ox + oz * oz;
-          if (d2 > 0.0001 && d2 < sep * sep) {
-            const d = Math.sqrt(d2), push = (sep - d) * 2.7 / d;
-            mx += ox * push; mz += oz * push;
-          }
-        };
         for (const other of this.list) {
           if (other === e || other.dead) continue;
-          separate(other.root.position.x, other.root.position.z, other.radius);
+          const op = other.root.position;
+          separation(e, p.x, p.z, op.x, op.z, other.radius);
+          mx += PUSH.x; mz += PUSH.z;
         }
         if (squad) {
           for (const m of squad.members) {
-            if (!m.dead) separate(m.root.position.x, m.root.position.z, m.radius);
+            if (m.dead) continue;
+            const mp = m.root.position;
+            separation(e, p.x, p.z, mp.x, mp.z, m.radius);
+            mx += PUSH.x; mz += PUSH.z;
           }
         }
         // 地面单位规则：脚底基准恒为 0，斜坡/车顶的 3.2m 顶面对怪物是墙（§5 高台安全）。
@@ -3016,8 +3366,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       armor: 0x2e6f6a, cloth: 0x24463f, accent: 0x9fb8ab,
       magazine: 24, reserve: 120, reloadTime: 2.3, fireInterval: 0.7, damage: 10, range: 18,
       melee: { damage: 26, cooldown: 1.4, reach: 2.2 } },
+    // 狙击手守高台：车顶岗位到两侧通道的射击线要 12m 以上才不被自家车皮压住，
+    // 所以只放宽"发现目标"的半径（20m），追击半径仍按通用 10m，且从不因此下楼（见 behave 的同层判定）。
     { key: 'ranger', name: '游骑兵', weapon: '狙击', hp: 90, speed: 3.4, order: 'hold', threatFirst: true,
-      armor: 0x4a6491, cloth: 0x31465e, accent: 0x8fd0ff,
+      armor: 0x4a6491, cloth: 0x31465e, accent: 0x8fd0ff, holdRadius: 20,
       magazine: 8, reserve: 40, reloadTime: 2.6, fireInterval: 1.35, damage: 26, range: 38 }
   ];
 
@@ -3115,6 +3467,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         hp: def.hp, maxHp: def.hp, dead: false, respawn: 0, stagger: 0,
         order: def.order, pendingOrder: null, orderClock: 0,
         ammo: def.magazine, reserve: def.reserve, reload: 0, fireCd: 0, meleeCd: 0,
+        aliveTime: 0,
         target: null, targetClock: 0, goal: new T.Vector3().copy(start),
         flash: 0, age: Math.random() * 10, phase: index * 1.7, moving: false, radius: 0.42
       };
@@ -3161,6 +3514,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           if (m.respawn <= 0) this.respawn(m);
           continue;
         }
+        // 结算面板"队伍存活时长榜"（§9）：只在存活期间累计。
+        m.aliveTime += dt;
         m.fireCd = Math.max(0, m.fireCd - dt);
         m.meleeCd = Math.max(0, m.meleeCd - dt);
         if (m.reload > 0) {
@@ -3211,6 +3566,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           const gl = Math.hypot(gx, gz) || 1;
           m.goal.set(post.x + gx / gl * (LEASH - 1), 0, post.z + gz / gl * (LEASH - 1));
         }
+        // 高台岗位不因追击下楼：守点者留在自己的层，狙击手原位开火（§4 死守岗位）。
+        const gy = game.world.floorAt(m.goal.x, m.goal.z, post.y);
+        if (Math.abs(gy - post.y) > 0.42) m.goal.copy(post);
         return;
       }
       if (m.order === 'follow') {
@@ -3240,7 +3598,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const mp = m.root.position;
       let radius, anchor;
       if (downed) { radius = 22; anchor = mp; }
-      else if (m.order === 'hold') { anchor = game.world.squadPosts[m.index]; radius = LEASH; }
+      else if (m.order === 'hold') { anchor = game.world.squadPosts[m.index]; radius = m.def.holdRadius || LEASH; }
       else if (m.order === 'follow') { anchor = player.position; radius = 20; }
       else { anchor = mp; radius = 30; }
       let best = null, bestScore = Infinity;
@@ -3278,7 +3636,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const dx = m.goal.x - p.x, dz = m.goal.z - p.z;
       const d = Math.hypot(dx, dz);
       // 目标点只存 XZ，支撑高度按当前地图顶面现算，岗位在中央平台（0.35m）上也不会贴地。
-      m.goal.y = world.floorAt(m.goal.x, m.goal.z);
+      // 用队友自己的脚底选层：站在桥下就是地面，不会被头顶的桥面抬到 3.6m。
+      m.goal.y = world.floorAt(m.goal.x, m.goal.z, p.y);
       if (d > 0.45) {
         // 友方走 navAlly：斜坡与车顶对队友开放，怪物仍被地面层挡在高台之外。
         const fieldId = 'g' + m.index;
@@ -3380,6 +3739,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const player = game.player.position;
       for (let i = drops.length - 1; i >= 0; --i) {
         const drop = drops[i];
+        // M5 特殊武器箱只归玩家（§4"队友不捡特殊武器"）。
+        if (drop.weapon) continue;
         const dp = drop.root.position;
         const d = Math.hypot(dp.x - m.root.position.x, dp.z - m.root.position.z);
         // 玩家够得着的补给让玩家先拿，避免嘴下抢食。
@@ -3394,6 +3755,25 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         }
         game.audio.pickup();
         game.effects.removeDrop(i);
+      }
+      // 波间补给箱队友也吃（§4 自动拾取脚下补给）：血 +35 / 备弹 +90，需同层且不跟玩家抢。
+      const supplies = game.effects.supplies;
+      for (let i = supplies.length - 1; i >= 0; --i) {
+        const supply = supplies[i];
+        const dp = supply.root.position;
+        const d = Math.hypot(dp.x - m.root.position.x, dp.z - m.root.position.z);
+        if (d > 1.1 || Math.hypot(dp.x - player.x, dp.z - player.z) < 2.2) continue;
+        if (Math.abs(m.root.position.y - supply.base) > 1.2) continue;
+        if (supply.kind === 'health') {
+          if (m.hp >= m.maxHp) continue;
+          m.hp = Math.min(m.maxHp, m.hp + 35);
+        } else {
+          if (m.reserve >= m.def.reserve) continue;
+          m.reserve = Math.min(m.def.reserve, m.reserve + 90);
+          if (m.ammo === 0 && m.reload === 0) this.startReload(m);
+        }
+        game.audio.pickup();
+        game.effects.removeSupply(i);
       }
     }
 
@@ -3484,6 +3864,12 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   if (!window.THREE) return;
   const T = THREE;
 
+  // M5 特殊武器（§8）：拾取替换手枪槽，耗尽/放弃后换回拾取时快照的手枪。
+  const SPECIALS = {
+    rocket: { type: 'rocket', model: 'rocket', name: 'R-80 火箭筒', damage: 450, capacity: 1, ammo: 1, reserve: 3, interval: 0.3, reloadTime: 3.2, recoil: 0.05, accuracy: 0.002, automatic: false, explosive: { radius: 2.5, damage: 450 } },
+    gatling: { type: 'gatling', model: 'gatling', name: 'M-56 加特林', damage: 43, capacity: 9999, ammo: 9999, reserve: 0, interval: 0.105, reloadTime: 1.25, recoil: 0.02, accuracy: 0.006, automatic: true, sustained: 30 }
+  };
+
   DZ.Weapons = class Weapons {
     constructor(game) {
       this.game = game;
@@ -3493,19 +3879,29 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.muzzlePosition = new T.Vector3();
       this.view = new T.Group();
       game.world.camera.add(this.view);
-      this.models = [this.buildModel(false), this.buildModel(true)];
-      for (const model of this.models) this.view.add(model);
+      this.models = {
+        rifle: this.buildModel('rifle'),
+        pistol: this.buildModel('pistol'),
+        rocket: this.buildModel('rocket'),
+        gatling: this.buildModel('gatling')
+      };
+      for (const model of Object.values(this.models)) this.view.add(model);
       this.reset();
       this.view.visible = false;
     }
 
     get current() { return this.items[this.index]; }
+    get currentModel() { return this.models[this.current.model]; }
+    // 加特林持枪减益（移速 -40%、禁跳）由 player.js 读取这一个口。
+    get heavy() { return this.current.type === 'gatling'; }
 
     reset() {
       this.items = [
-        { type: 'rifle', name: 'AR-7 突击步枪', damage: 27, capacity: 30, ammo: 30, reserve: 180, interval: 0.105, reloadTime: 1.9, recoil: 0.014, accuracy: 0.004, automatic: true },
-        { type: 'pistol', name: 'P-12 战术手枪', damage: 44, capacity: 12, ammo: 12, reserve: 72, interval: 0.28, reloadTime: 1.25, recoil: 0.03, accuracy: 0.002, automatic: false }
+        { type: 'rifle', model: 'rifle', name: 'AR-7 突击步枪', damage: 27, capacity: 30, ammo: 30, reserve: 180, interval: 0.105, reloadTime: 1.9, recoil: 0.014, accuracy: 0.004, automatic: true },
+        { type: 'pistol', model: 'pistol', name: 'P-12 战术手枪', damage: 44, capacity: 12, ammo: 12, reserve: 72, interval: 0.28, reloadTime: 1.25, recoil: 0.03, accuracy: 0.002, automatic: false }
       ];
+      this.special = null;
+      this.specialTimer = 0;
       this.index = 0;
       this.cooldown = 0;
       this.reloadRemaining = 0;
@@ -3517,7 +3913,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.applyVisibility();
     }
 
-    buildModel(pistol) {
+    buildModel(kind) {
       const root = new T.Group();
       const box = new T.BoxGeometry(1, 1, 1);
       const material = (color, metalness = 0.5) => new T.MeshStandardMaterial({ color, metalness, roughness: 0.45, depthTest: false, depthWrite: false });
@@ -3531,7 +3927,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         mesh.frustumCulled = false;
         root.add(mesh); return mesh;
       };
-      if (pistol) {
+      if (kind === 'pistol') {
         part(0, 0.015, -0.27, 0.095, 0.085, 0.36, steel);
         part(0, -0.04, -0.22, 0.09, 0.055, 0.25, dark);
         part(0, -0.15, -0.13, 0.085, 0.22, 0.11, grip, -0.2);
@@ -3542,7 +3938,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         for (let i = 0; i < 5; i++) part(0.049, 0.023, -0.11 - i * 0.018, 0.005, 0.05, 0.006, dark);
         part(0.018, -0.13, -0.1, 0.115, 0.09, 0.16, glove, -0.12);
         part(0.05, -0.28, 0.03, 0.13, 0.27, 0.2, tan, -0.4);
-      } else {
+      } else if (kind === 'rifle') {
         part(0, 0, -0.33, 0.13, 0.13, 0.42, dark);
         part(0, 0.008, -0.65, 0.105, 0.11, 0.31, tan);
         part(0, -0.11, -0.35, 0.085, 0.22, 0.12, steel, 0.12);
@@ -3563,9 +3959,44 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         part(-0.14, -0.19, -0.43, 0.15, 0.14, 0.39, tan, 0.3);
         part(0.025, -0.12, -0.13, 0.13, 0.085, 0.16, glove, -0.1);
         part(0.06, -0.25, 0.02, 0.14, 0.21, 0.23, tan, -0.5);
+      } else if (kind === 'rocket') {
+        // R-80：粗发射管 + 战斗部 + 瞄准具，炮口在弹头前。
+        part(0, 0.02, -0.55, 0.115, 0.115, 0.8, dark);
+        part(0, 0.02, -0.12, 0.15, 0.15, 0.14, steel);
+        part(0, 0.02, -0.99, 0.075, 0.075, 0.2, tan);
+        part(0, 0.02, -1.11, 0.045, 0.045, 0.06, marker);
+        part(0, 0.105, -0.34, 0.03, 0.07, 0.05, steel);
+        part(0, 0.1, -0.72, 0.026, 0.06, 0.09, dark);
+        part(0, -0.115, -0.32, 0.07, 0.2, 0.1, grip, -0.22);
+        part(0, -0.09, -0.62, 0.07, 0.14, 0.1, grip, -0.22);
+        part(-0.075, 0.06, -0.5, 0.12, 0.08, 0.3, glove, -0.05);
+        part(0.03, -0.16, -0.12, 0.14, 0.1, 0.2, tan, -0.55);
+      } else {
+        // M-56：六管旋置弹鼓 + 供弹箱，护木前伸。
+        part(0, 0.03, -0.42, 0.19, 0.19, 0.46, dark);
+        part(0, 0.03, -0.66, 0.155, 0.155, 0.16, steel);
+        const spin = new T.Group();
+        spin.position.set(0, 0.03, -0.85);
+        for (let i = 0; i < 6; i++) {
+          const angle = i * Math.PI / 3;
+          const barrel = new T.Mesh(box, dark);
+          barrel.scale.set(0.028, 0.028, 0.46);
+          barrel.position.set(Math.cos(angle) * 0.062, Math.sin(angle) * 0.062, 0);
+          barrel.renderOrder = 1000;
+          spin.add(barrel);
+        }
+        root.add(spin);
+        root.userData.spin = spin;
+        part(0, -0.12, -0.36, 0.08, 0.2, 0.11, grip, -0.2);
+        part(0, 0.06, -0.24, 0.14, 0.12, 0.1, tan);
+        part(0.1, -0.05, -0.5, 0.1, 0.14, 0.26, tan, 0.1);
+        part(-0.1, -0.02, -0.74, 0.12, 0.1, 0.2, glove, 0.05);
+        part(0.02, -0.2, -0.1, 0.15, 0.22, 0.24, tan, -0.5);
       }
       const muzzle = new T.Group();
-      muzzle.position.set(0, pistol ? 0.015 : 0.014, pistol ? -0.47 : -1.07);
+      const muzzleOffset = kind === 'pistol' ? [0, 0.015, -0.47] :
+        kind === 'rocket' ? [0, 0.02, -1.16] : kind === 'gatling' ? [0, 0.03, -1.1] : [0, 0.014, -1.07];
+      muzzle.position.set(muzzleOffset[0], muzzleOffset[1], muzzleOffset[2]);
       const flashMaterial = new T.MeshBasicMaterial({ color: 0xffe9a4, transparent: true, opacity: 0.92, blending: T.AdditiveBlending, depthTest: false, depthWrite: false });
       const core = new T.Mesh(new T.OctahedronGeometry(0.095), flashMaterial);
       core.scale.set(0.65, 0.65, 2.1); core.renderOrder = 1002;
@@ -3581,10 +4012,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
 
     applyVisibility() {
-      this.models.forEach((model, index) => {
-        model.visible = index === this.index;
+      const active = this.current ? this.current.model : 'rifle';
+      for (const [key, model] of Object.entries(this.models)) {
+        model.visible = key === active;
         model.userData.muzzle.visible = false;
-      });
+      }
     }
 
     switchTo(index) {
@@ -3600,10 +4032,62 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.applyVisibility();
     }
 
+    // M5 拾取：替换手枪槽并快照当前手枪（耗尽/换回时弹药原样带回）；持枪中再拾新箱直接替换。
+    grantSpecial(kind) {
+      const def = SPECIALS[kind];
+      if (!def) return false;
+      if (!this.special) this.special = { kind, pistol: Object.assign({}, this.items[1]) };
+      else this.special.kind = kind;
+      this.items[1] = Object.assign({}, def);
+      this.specialTimer = def.sustained || 0;
+      this.index = 1;
+      this.reloadRemaining = 0;
+      this.reloadDuration = 0;
+      this.flashRemaining = 0;
+      this.switchRemaining = 0.22;
+      this.cooldown = Math.max(this.cooldown, 0.22);
+      this.game.player.fireQueued = false;
+      this.applyVisibility();
+      this.game.ui.toast(kind === 'rocket' ?
+        '获得 R-80 火箭筒 · 替换手枪槽（4 发 · 装填 3.2 秒）' :
+        '获得 M-56 加特林 · 30 秒持续弹 · 移速 -40% · 无法跳跃', 3);
+      return true;
+    }
+
+    stowSpecial(message) {
+      if (!this.special) return;
+      this.items[1] = this.special.pistol;
+      this.special = null;
+      this.specialTimer = 0;
+      this.reloadRemaining = 0;
+      this.reloadDuration = 0;
+      if (this.index === 1) {
+        this.switchRemaining = 0.22;
+        this.game.player.fireQueued = false;
+        this.applyVisibility();
+      }
+      if (message) this.game.ui.toast(message, 2.5);
+    }
+
+    // 倒地掉落（§8）：当前特殊武器掉在倒地位置可重捡，波次结束未捡则消失。
+    dropSpecial() {
+      if (!this.special) return false;
+      const kind = this.special.kind;
+      const position = this.game.player.position.clone();
+      this.stowSpecial();
+      this.game.effects.drop(position, kind, { waveEnd: true });
+      this.game.ui.toast('特殊武器掉落在地 · 拾取可重新装备', 2.5);
+      return true;
+    }
+
     reload() {
       const gun = this.current;
       if (this.reloadRemaining > 0 || gun.ammo === gun.capacity || this.game.state !== 'playing') return;
-      if (gun.reserve === 0) { this.game.ui.toast('备用弹药不足 · 切换武器或寻找补给'); return; }
+      if (gun.reserve === 0) {
+        if (gun.type === 'rocket') this.stowSpecial('R-80 弹药耗尽 · 换回 P-12');
+        else this.game.ui.toast('备用弹药不足 · 切换武器或寻找补给');
+        return;
+      }
       this.reloadRemaining = this.reloadDuration = gun.reloadTime;
       this.flashRemaining = 0;
       this.game.audio.reload();
@@ -3611,7 +4095,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
     addAmmo(rifle, pistol) {
       this.items[0].reserve = Math.min(420, this.items[0].reserve + rifle);
-      this.items[1].reserve = Math.min(180, this.items[1].reserve + pistol);
+      // 持特殊武器时手枪槽被占用：补给记到快照上，换回手枪后到账。
+      const pistolSlot = this.special ? this.special.pistol : this.items[1];
+      pistolSlot.reserve = Math.min(180, pistolSlot.reserve + pistol);
     }
 
     shoot() {
@@ -3634,15 +4120,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const targets = this.game.world.blockers.concat(this.game.enemies.hitTargets());
       const hit = this.ray.intersectObjects(targets, false)[0];
       const endpoint = hit ? hit.point : this.ray.ray.at(85, new T.Vector3());
-      const muzzle = this.models[this.index].userData.muzzle;
+      const muzzle = this.currentModel.userData.muzzle;
       muzzle.getWorldPosition(this.muzzlePosition);
       this.game.effects.tracer(this.muzzlePosition, endpoint);
       this.game.effects.casing(camera);
-      if (hit && hit.object.userData.enemy) {
+      if (gun.type === 'rocket') {
+        // R-80：直射命中点（或 45m 射线终点）立即起爆，2.5m 半径 450 只算敌人。
+        // 命中机体时爆点落到该敌人脚下：泰坦体型躯干高出同层阈值 2.2m，用命中点会把被打中的目标自己筛掉。
+        const body = hit && hit.object.userData.enemy;
+        const point = body ? body.root.position.clone() : hit ? hit.point : this.ray.ray.at(45, new T.Vector3());
+        this.game.enemies.explode(point, gun.explosive.radius, gun.explosive.damage);
+      } else if (hit && hit.object.userData.enemy) {
         const headshot = Boolean(hit.object.userData.headshot);
         this.game.enemies.damage(hit.object.userData.enemy, gun.damage * (headshot ? 2 : 1), hit.point, this.ray.ray.direction, headshot, 0, gun.type);
       } else if (hit) this.game.effects.burst(hit.point, 'spark', 7);
-      this.spread = Math.min(0.14, this.spread + (gun.type === 'rifle' ? 0.018 : 0.032));
+      this.spread = Math.min(0.14, this.spread + (gun.type === 'rifle' || gun.type === 'gatling' ? 0.018 : 0.032));
       this.game.player.recoil(gun.recoil);
       this.game.audio.shot(gun.type);
       return true;
@@ -3663,15 +4155,31 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         }
       }
       const player = this.game.player;
+      // M-56 持续弹只按持枪时间走表：切回步枪不计加特林消耗。
+      if (this.special && this.current.type === 'gatling' && this.game.state === 'playing') {
+        this.specialTimer -= dt;
+        if (this.specialTimer <= 0) { this.stowSpecial('M-56 弹链打空 · 换回 P-12'); }
+      }
       if (player.fireQueued || (player.shooting && this.current.automatic)) this.shoot();
       player.fireQueued = false;
       if (this.current.ammo === 0 && this.current.reserve > 0 && this.reloadRemaining === 0 && this.cooldown === 0) this.reload();
+      // 火箭筒弹鼓与备弹全空（装填也无法继续）时自动换回手枪。
+      if (this.special && this.current.type === 'rocket' && this.current.ammo === 0 &&
+          this.current.reserve === 0 && this.reloadRemaining === 0) {
+        this.stowSpecial('R-80 弹药耗尽 · 换回 P-12');
+      }
       const bob = player.moving && player.grounded ? Math.sin(player.stride) * 0.013 : Math.sin(this.game.time * 1.8) * 0.003;
       const reload = this.reloadRemaining > 0 ? Math.sin((1 - this.reloadRemaining / this.reloadDuration) * Math.PI) : 0;
-      this.view.position.set(this.index === 0 ? 0.26 : 0.22, -0.27 + bob - reload * 0.2 - this.switchRemaining * 0.55, -0.4 + this.visualKick * 0.055);
+      const viewX = this.current.model === 'rifle' ? 0.26 : this.current.model === 'pistol' ? 0.22 :
+        this.current.model === 'rocket' ? 0.19 : 0.15;
+      this.view.position.set(viewX, -0.27 + bob - reload * 0.2 - this.switchRemaining * 0.55, -0.4 + this.visualKick * 0.055);
       this.view.rotation.set(this.visualKick * 0.065 - reload * 0.35, -0.025, -reload * 0.35 - (player.sprinting ? 0.13 : 0));
-      this.models[this.index].userData.muzzle.visible = this.flashRemaining > 0;
-      this.models[this.index].userData.muzzle.rotation.z = this.game.time * 43;
+      const gunModel = this.currentModel;
+      gunModel.userData.muzzle.visible = this.flashRemaining > 0;
+      gunModel.userData.muzzle.rotation.z = this.game.time * 43;
+      // 加特林枪管：开火时高速旋转，平时慢转。
+      const spin = gunModel.userData.spin;
+      if (spin) spin.rotation.z += dt * (player.shooting && this.current.automatic && this.cooldown <= 0 ? 26 : 3);
       this.view.updateMatrixWorld(true);
     }
   };
@@ -3713,8 +4221,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         'reload-indicator reload-progress fps hitmarker damage-numbers killfeed ' +
         'wave-banner banner-title banner-subtitle banner-eyebrow toast damage-overlay ' +
         'result-eyebrow result-title result-description result-score result-wave result-kills ' +
+        'result-headshot result-coins result-coins-cell result-time result-breakdown ' +
+        'result-breakdown-text result-squad-board result-squad-list ' +
         'downed downed-ring downed-count downed-hint rally rally-count coins-panel coins-value ' +
-        'squad-panel squad-rows fog-veil';
+        'squad-panel squad-rows fog-veil boss-bar boss-name boss-fill boss-value';
       ids.split(' ').forEach((id) => { this.el[id] = document.getElementById(id); });
 
       this.healthPanel = this.el['health-value'].closest('.health-panel');
@@ -3753,7 +4263,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.el.killfeed.setAttribute('aria-relevant', 'additions');
       this.el.minimap.setAttribute('role', 'img');
       this.el.minimap.setAttribute('aria-label',
-        '战术雷达，北向上；绿色箭头为玩家，红点为敌人，蓝色圆点为 AI 队友，绿色方块为医疗包，琥珀色方块为弹药，青色方框为前线复活点，黑色圆区为雾散体黑雾（该区域雷达失效）。');
+        '战术雷达，北向上；绿色箭头为玩家，红点为敌人，蓝色圆点为 AI 队友，绿色方块为医疗箱，琥珀色方块为弹药箱，紫色方块为特殊武器箱，青色方框为前线复活点，黑色圆区为雾散体黑雾（该区域雷达失效）。');
       this.el['wave-pips'].setAttribute('aria-hidden', 'true');
       [this.healthBar, this.reloadBar].forEach((bar) => {
         bar.setAttribute('role', 'progressbar');
@@ -3933,9 +4443,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1 ||
           projected.z < -1 || projected.z > 1) return;
 
-      var bounds = this.el['damage-numbers'].getBoundingClientRect();
-      var width = bounds.width || window.innerWidth;
-      var height = bounds.height || window.innerHeight;
+      // damage-numbers 是 inset:0 全屏容器，尺寸等价于视口；直读 innerWidth/Height，避免每发命中 getBoundingClientRect 强制同步布局。
+      var width = window.innerWidth;
+      var height = window.innerHeight;
       if (!(width > 0 && height > 0)) return;
       if (this.damageNumbers.length >= 16) this.damageNumbers.shift().node.remove();
       var node = document.createElement('span');
@@ -4029,9 +4539,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.el.downed.hidden = !downed;
       if (downed) {
         var remaining = Math.max(0, number(player.downedRemaining, 0));
-        var ratio = clamp(remaining / Math.max(0.001, number(revive.castTime, 3)), 0, 1);
+        var ratio = clamp(remaining / Math.max(0.001, number(revive.castTime, 60)), 0, 1);
         this.el['downed-ring'].style.setProperty('--p', String(ratio));
-        this._text('downed-count', remaining.toFixed(1));
+        this._text('downed-count', remaining >= 10 ? String(Math.ceil(remaining)) : remaining.toFixed(1));
         this._text('downed-hint', coins > 0 ?
           '按 E 消耗 1 枚复活币 · 在前线复活点归队' : '复活币耗尽 · 读条走完即失守');
       }
@@ -4086,7 +4596,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         else text = labels[m.order] || m.order;
         if (r.order.textContent !== text) r.order.textContent = text;
         var ratio = clamp(number(m.hp, 0) / Math.max(1, m.maxHp), 0, 1);
-        r.fill.style.width = Math.round(ratio * 100) + '%';
+        var fillW = Math.round(ratio * 100) + '%';
+        if (r.fillW !== fillW) { r.fillW = fillW; r.fill.style.width = fillW; }
       }, this);
     }
 
@@ -4101,7 +4612,22 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         effects.fogDensity(position) : 0;
       var opacity = clamp(density * 0.92, 0, 0.92);
       veil.hidden = opacity <= 0.01;
-      veil.style.opacity = String(opacity);
+      var opacityStr = String(opacity);
+      if (this._veilOpacity !== opacityStr) { this._veilOpacity = opacityStr; veil.style.opacity = opacityStr; }
+    }
+
+    // BOSS 血条：泰坦/巨型泰坦登场时显示，狂暴态（e.rage）变色（§8-④）。
+    _updateBoss(game) {
+      var boss = game.enemies && game.enemies.boss && !game.enemies.boss.dead ? game.enemies.boss : null;
+      this.el['boss-bar'].hidden = !boss;
+      if (!boss) return;
+      var hp = Math.max(0, number(boss.hp, 0));
+      var max = Math.max(1, number(boss.maxHp, hp || 1));
+      this._text('boss-name', (boss.def && boss.def.name) || 'BOSS');
+      this._text('boss-value', Math.ceil(hp) + ' / ' + Math.ceil(max));
+      var pct = (hp / max * 100) + '%';
+      if (this._bossPct !== pct) { this._bossPct = pct; this.el['boss-fill'].style.width = pct; }
+      this.el['boss-bar'].classList.toggle('rage', Boolean(boss.rage));
     }
 
     _updateHUD(game) {
@@ -4110,8 +4636,6 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       var current = weapons.current || {};
       var health = clamp(number(player.health, 100), 0, 100);
       var index = weapons.index === 1 ? 1 : 0;
-      var ammo = count(number(current.ammo, 30));
-      var reserve = count(number(current.reserve, 180));
       var total = this._totalWaves(game);
       var wave = clamp(count(game.wave), 0, total);
       var completed = clamp(count(game.completedWaves), 0, total);
@@ -4122,12 +4646,15 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       var active = game.wavePhase === 'active';
 
       this._text('health-value', Math.ceil(health));
-      this.el['health-fill'].style.width = health + '%';
+      var healthPct = health + '%';
+      if (this._healthPct !== healthPct) { this._healthPct = healthPct; this.el['health-fill'].style.width = healthPct; }
       this.healthPanel.classList.toggle('low', health <= 30);
-      this.healthBar.setAttribute('aria-valuenow', String(Math.ceil(health)));
+      var healthNow = String(Math.ceil(health));
+      if (this._healthNow !== healthNow) { this._healthNow = healthNow; this.healthBar.setAttribute('aria-valuenow', healthNow); }
       this._updateRevive(game, player);
       this._updateSquad(game);
       this._updateFogVeil(game, player);
+      this._updateBoss(game);
       this._text('score-value', padded(game.score, 5));
       var waveText = padded(wave, 2) + ' ';
       if (this.waveNumber.nodeValue !== waveText) this.waveNumber.nodeValue = waveText;
@@ -4155,27 +4682,42 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this._text('radar-count', enemies ? '检测到 ' + alive + ' 个敌对信号' : '区域扫描中');
       this._text('weapon-name', current.name || (index === 0 ? 'AR-7 突击步枪' : '战术手枪'));
       var automatic = typeof current.automatic === 'boolean' ? current.automatic : index === 0;
-      this._text('weapon-mode', automatic ? 'AUTO' : 'SEMI');
+      // M5 特殊武器：加特林弹药位显示剩余秒数、备弹 ∞；火箭筒标"单发"。
+      var gatling = current.type === 'gatling';
+      var ammo = gatling ? Math.max(0, Math.ceil(number(weapons.specialTimer, 0))) : count(number(current.ammo, 30));
+      var reserve = count(number(current.reserve, 180));
+      this._text('weapon-mode', current.type === 'rocket' ? '单发' : automatic ? 'AUTO' : 'SEMI');
       this._text('weapon-slots', index === 0 ? '01 — PRIMARY' : '02 — SECONDARY');
       this._text('ammo-value', ammo);
-      this._text('reserve-value', reserve);
-      this.el['ammo-value'].setAttribute('aria-label',
-        '弹匣 ' + ammo + ' / ' + count(number(current.capacity, 30)) + '，备用弹药 ' + reserve);
+      this._text('reserve-value', gatling ? '∞' : reserve);
+      var ammoLabel = gatling ? '持续弹剩余 ' + ammo + ' 秒，备弹不限' :
+        '弹匣 ' + ammo + ' / ' + count(number(current.capacity, 30)) + '，备用弹药 ' + reserve;
+      if (this._ammoLabel !== ammoLabel) { this._ammoLabel = ammoLabel; this.el['ammo-value'].setAttribute('aria-label', ammoLabel); }
       this.ammoPanel.classList.toggle('empty', ammo === 0);
-      for (var i = 0; i < Math.min(2, this.weaponHints.length); i++) {
-        this.weaponHints[i].style.color = i === index ? 'var(--lime)' : '';
-        if (i === index) this.weaponHints[i].setAttribute('aria-current', 'true');
-        else this.weaponHints[i].removeAttribute('aria-current');
+      if (this._weaponIndex !== index) {
+        this._weaponIndex = index;
+        for (var i = 0; i < Math.min(2, this.weaponHints.length); i++) {
+          this.weaponHints[i].style.color = i === index ? 'var(--lime)' : '';
+          if (i === index) this.weaponHints[i].setAttribute('aria-current', 'true');
+          else this.weaponHints[i].removeAttribute('aria-current');
+        }
       }
-      this.el.crosshair.style.setProperty('--spread',
-        clamp(7 + Math.max(0, number(weapons.spread, 0)) * 180, 7, 40) + 'px');
+      var spread = clamp(7 + Math.max(0, number(weapons.spread, 0)) * 180, 7, 40) + 'px';
+      if (this._spread !== spread) { this._spread = spread; this.el.crosshair.style.setProperty('--spread', spread); }
       var reloadRemaining = Math.max(0, number(weapons.reloadRemaining, 0));
       var reloadDuration = Math.max(0, number(weapons.reloadDuration, 0));
       var reloadProgress = reloadRemaining > 0 && reloadDuration > 0 ?
         clamp(1 - reloadRemaining / reloadDuration, 0, 1) : 0;
       this.el['reload-indicator'].hidden = reloadRemaining <= 0;
-      this.el['reload-progress'].style.width = (reloadProgress * 100) + '%';
-      this.reloadBar.setAttribute('aria-valuenow', String(Math.round(reloadProgress * 100)));
+      var reloadPct = (reloadProgress * 100) + '%';
+      if (this._reloadPct !== reloadPct) { this._reloadPct = reloadPct; this.el['reload-progress'].style.width = reloadPct; }
+      var reloadAria = String(Math.round(reloadProgress * 100));
+      if (this._reloadAria !== reloadAria) { this._reloadAria = reloadAria; this.reloadBar.setAttribute('aria-valuenow', reloadAria); }
+    }
+
+    _formatTime(value) {
+      var seconds = Math.max(0, Math.floor(number(value, 0)));
+      return clamp(Math.floor(seconds / 60), 0, 99) + ':' + String(seconds % 60).padStart(2, '0');
     }
 
     _fillResult(won, game) {
@@ -4188,10 +4730,46 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this._text('result-description', won ?
         '信号重新接通。隔离区暂时安全了。' :
         (deathWave > 0 ? '阵亡于第 ' + deathWave + ' 波。' : '') + '防线已经失守，但任务尚未结束。重整装备，再次出发。');
-      this._text('result-score', count(game.score));
+      // §9 总分 = (击杀分 + 波次分) × 难度倍率 × 硬核加成；练习模式 finalScore 即原始分。
+      this._text('result-score', count(number(game.finalScore, game.score)));
       var total = this._totalWaves(game);
-      this._text('result-wave', clamp(count(game.completedWaves), 0, total) + ' / ' + total);
+      this._text('result-wave', clamp(count(game.wave), 0, total) + ' / ' + total);
       this._text('result-kills', count(game.kills) + ' / ' + count(game.headshots));
+      var kills = count(game.kills);
+      var rate = kills > 0 ? Math.round(count(game.headshots) / kills * 100) : 0;
+      this._text('result-headshot', rate + '%');
+      this._text('result-coins', count(game.coinsUsed));
+      this._text('result-time', this._formatTime(game.time));
+      var giant = Boolean(game.waveMode && game.waveMode.allowCoins);
+      this.el['result-coins-cell'].style.display = giant ? '' : 'none';
+      this.el['result-breakdown'].hidden = !giant;
+      // 队伍存活榜要在练习模式（无 squad）先隐藏，否则早退会让上一局的榜单留在面板上。
+      var squad = game.squad;
+      this.el['result-squad-board'].hidden = !squad;
+      var list = this.el['result-squad-list'];
+      list.textContent = '';
+      if (!giant) return;
+      var difficulty = number((game.difficultyConfig || {}).scoreMultiplier, 1);
+      this.el['result-breakdown-text'].innerHTML =
+        '(击杀分 <b>' + count(game.killScore) + '</b> + 波次分 <b>' + count(game.waveScoreTotal) +
+        '</b>) × 难度 <b>×' + difficulty + '</b>' + (game.hardcore ? ' × 硬核 <b>×1.5</b>' : '') +
+        ' = 总分 <b>' + count(number(game.finalScore, game.score)) + '</b>' +
+        ' · 队友击杀 ' + count(game.squadKills) + '（按 60% 计入）';
+      if (!squad) return;
+      var board = squad.members.map(function (member) {
+        return { name: member.def.name, time: number(member.aliveTime, 0) };
+      }).sort(function (a, b) { return b.time - a.time; });
+      var self = this;
+      board.forEach(function (entry) {
+        var li = document.createElement('li');
+        var label = document.createElement('span');
+        label.textContent = entry.name;
+        var value = document.createElement('em');
+        value.textContent = self._formatTime(entry.time);
+        li.appendChild(label);
+        li.appendChild(value);
+        list.appendChild(li);
+      });
     }
 
     _drawMinimap() {
@@ -4294,8 +4872,20 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       ((effects && effects.drops) || []).forEach((drop) => {
         var position = drop.root && drop.root.position;
         if (!validPosition(position)) return;
+        if (drop.weapon) {
+          ctx.fillStyle = '#c18ff5';
+          ctx.fillRect(mapX(position.x) - 3.5, mapZ(position.z) - 3.5, 7, 7);
+          return;
+        }
         ctx.fillStyle = drop.type === 'health' ? '#91e9a0' : '#eac17a';
         ctx.fillRect(mapX(position.x) - 2.5, mapZ(position.z) - 2.5, 5, 5);
+      });
+      // 波间补给箱：与击杀掉落同色系，稍大一圈便于区分。
+      ((effects && effects.supplies) || []).forEach((supply) => {
+        var position = supply.root && supply.root.position;
+        if (!validPosition(position)) return;
+        ctx.fillStyle = supply.kind === 'health' ? '#91e9a0' : '#eac17a';
+        ctx.fillRect(mapX(position.x) - 3, mapZ(position.z) - 3, 6, 6);
       });
       ctx.fillStyle = '#ff796d';
       var enemies = this.game.enemies;
@@ -4403,8 +4993,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.state = 'menu';
       this.applySettings();
       this.wave = this.completedWaves = this.score = this.kills = this.headshots = this.squadKills = 0;
+      this.killScore = this.waveScoreTotal = this.waveCoins = 0;
+      this.finalScore = 0;
       this.coinsUsed = 0;
       this.deathWave = 0;
+      this.scoreMultiplier = 1;
       this.wavePhase = 'intermission';
       this.nextWaveIn = 4;
       this.time = 0;
@@ -4463,6 +5056,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.difficulty = s.difficulty;
       this.difficultyConfig = DZ.WAVES.difficulty(s.difficulty);
       this.coins = s.coins;
+      // 硬核加成（§9）：巨人城模式开局把复活币设为 0，最终得分 ×1.5。
+      this.hardcore = this.waveMode.allowCoins && s.coins === 0;
       this.allowRevive = this.waveMode.allowCoins && Boolean(this.waveMode.revive);
       this.totalWaves = this.waveMode.waves.length;
       this.waveSizes = this.waveMode.waves.map(w => w.total);
@@ -4528,10 +5123,19 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.player.reset();
       this.weapons.reset();
       if (this.waveMode.allowSquad) this.squad = new DZ.Squad(this);
+      // M3b 留的接缝：15/20 波泰坦击杀必掉特殊武器箱（30 波无 specialBox 标记不掉）。
+      this.enemies.onBossDeath = enemy => {
+        const cfg = DZ.WAVES.waveAt(this.waveMode, this.wave - 1);
+        if (this.waveMode.key !== 'giant' || !cfg.boss || !cfg.specialBox) return;
+        this.spawnSpecialBox(cfg.specialWeapon || 'rocket', enemy.root.position);
+      };
       this.time = 0;
       this.wave = this.completedWaves = this.score = this.kills = this.headshots = this.squadKills = 0;
+      this.killScore = this.waveScoreTotal = this.waveCoins = 0;
+      this.finalScore = 0;
       this.coinsUsed = 0;
       this.deathWave = 0;
+      this.scoreMultiplier = 1;
       this.wavePhase = 'intermission';
       this.nextWaveIn = 4;
       this.growlIn = 5;
@@ -4598,13 +5202,33 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.decorateMenu();
     }
 
+    // 固定投放（§8）：8/24/29 波开局刷中央平台，15/20 波泰坦必掉；波次结束未拾取则消失。
+    spawnSpecialBox(kind, position) {
+      this.effects.drop(position.clone ? position.clone() : position, kind, { waveEnd: true });
+      this.ui.toast(`特殊武器补给投放 · ${kind === 'rocket' ? 'R-80 火箭筒' : 'M-56 加特林'}`, 2.5);
+    }
+
+    // 波间补给：4 固定点位每波点亮（弹药×2 + 医疗×2 随机分配，点位轮换=类型轮换）。
+    spawnWaveSupplies() {
+      const points = this.world.supplyPoints;
+      if (!points.length) return;
+      const kinds = ['ammo', 'ammo', 'health', 'health'];
+      for (let i = kinds.length - 1; i > 0; --i) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = kinds[i]; kinds[i] = kinds[j]; kinds[j] = t;
+      }
+      for (let i = 0; i < points.length && i < kinds.length; i++) this.effects.spawnSupply(points[i], kinds[i]);
+    }
+
     startWave() {
       this.wave++;
       this.wavePhase = 'active';
+      this.waveCoins = 0;
       const giant = this.waveMode.key === 'giant';
       const cfg = DZ.WAVES.waveAt(this.waveMode, this.wave - 1);
       this.enemies.startWave(this.wave);
       this.audio.wave();
+      if (giant && cfg.specialBox && !cfg.boss) this.spawnSpecialBox(cfg.specialWeapon || 'gatling', this.world.specialBoxPoint);
       if (giant) {
         const isBoss = cfg.boss;
         const last = this.wave === this.totalWaves;
@@ -4634,15 +5258,25 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         if (this.nextWaveIn <= 0) this.startWave();
       } else if (this.enemies.pending === 0 && this.enemies.aliveCount() === 0) {
         this.completedWaves = this.wave;
-        this.score += this.waveMode.waveScore;
+        // §9 波次分 = 每波 300 + 该波未耗币奖励 100（练习模式 noReviveBonus 为 0，行为不变）。
+        const bonus = this.waveCoins === 0 ? (this.waveMode.noReviveBonus || 0) : 0;
+        this.score += this.waveMode.waveScore + bonus;
+        this.waveScoreTotal += this.waveMode.waveScore + bonus;
         if (this.wave === this.totalWaves) { this.finish(true); return; }
         this.wavePhase = 'intermission';
         this.nextWaveIn = this.waveMode.intermission;
         this.player.heal(20);
         this.weapons.addAmmo(60, 24);
         if (this.squad) this.squad.resupply();
+        // M5 波末：上一波的临时箱（特殊武器箱/倒地掉落）过期，再点亮本波补给。
+        if (this.waveMode.supplies) {
+          this.effects.expireWaveDrops();
+          this.effects.expireSupplies();
+          this.spawnWaveSupplies();
+        }
         this.audio.pickup();
-        this.ui.showBanner('区域暂时安全', `生命 +20 · 弹药已补给 · 准备第 ${this.wave + 1} 波`, `WAVE CLEARED / +${this.waveMode.waveScore}`, 4);
+        this.ui.showBanner('区域暂时安全', `生命 +20 · 弹药已补给 · 准备第 ${this.wave + 1} 波`,
+          `WAVE CLEARED / +${this.waveMode.waveScore + bonus}`, 4);
       }
       this.ui.update(dt);
     }
@@ -4651,6 +5285,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (this.state !== 'playing') return;
       this.state = won ? 'won' : 'lost';
       if (!won) this.deathWave = this.wave;
+      // §9 总分 = (击杀分 + 波次分) × 难度倍率 × 硬核加成；练习模式不乘（scoreMultiplied:false）。
+      const mult = this.waveMode.scoreMultiplied ?
+        this.difficultyConfig.scoreMultiplier * (this.hardcore ? 1.5 : 1) : 1;
+      this.scoreMultiplier = mult;
+      this.finalScore = Math.round(this.score * mult);
       this.player.downed = false;
       this.player.downedRemaining = 0;
       this.player.clearInput();

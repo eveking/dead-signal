@@ -80,15 +80,17 @@
       if (this.stagger > 0) { x = 0; z = 0; this.jumpQueued = false; }
       this.moving = x !== 0 || z !== 0;
       this.sprinting = this.moving && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && !this.shooting;
-      const speed = this.sprinting ? 7.3 : 4.5;
+      // M5 加特林减益（§8）：持枪期间走/跑同乘 ×0.6，禁止跳跃；切回步枪即解除。
+      const heavy = this.game.weapons.heavy;
+      const speed = (this.sprinting ? 7.3 : 4.5) * (heavy ? 0.6 : 1);
       const length = Math.hypot(x, z) || 1;
       x = x / length * speed * dt;
       z = z / length * speed * dt;
       const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
       this.game.world.move(this.position, x * cos + z * sin, -x * sin + z * cos, 0.38);
       // 脚底支撑面：平地/中央平台/车顶/斜坡都用同一个高度，落地判定不再写死 y=0。
-      const floor = this.game.world.floorAt(this.position.x, this.position.z);
-      if (this.jumpQueued && this.grounded) {
+      const floor = this.game.world.floorAt(this.position.x, this.position.z, this.position.y);
+      if (this.jumpQueued && this.grounded && !heavy) {
         this.velocityY = 6.2;
         this.grounded = false;
       }
@@ -138,7 +140,7 @@
       if (game.state !== 'playing' || this.downed || this.invulnerable > 0) return;
       DZ.knockPosition(game.world, this.position, dx, dz, distance, 0.38);
       // 被推出台沿时保留高度自由落体（打进车顶下方同理），仍站在同层或更高顶面才贴地。
-      const floor = game.world.floorAt(this.position.x, this.position.z);
+      const floor = game.world.floorAt(this.position.x, this.position.z, this.position.y);
       this.velocityY = 0;
       if (this.position.y > floor + 0.02) {
         this.grounded = false;
@@ -153,7 +155,7 @@
 
     get reviveConfig() { return this.game.waveMode.revive; }
 
-    // 倒地：有币则进入 3 秒濒死读条；无币（含硬核 0 币开局）或不启用复活币的模式直接失败。
+    // 倒地：有币则进入濒死读条（时长取 revive.castTime）；无币（含硬核 0 币开局）或不启用复活币的模式直接失败。
     goDowned() {
       const game = this.game;
       const config = this.reviveConfig;
@@ -164,6 +166,7 @@
       this.rallyWindow = 0;
       this.clearInput();
       this.velocityY = 0;
+      game.weapons.dropSpecial();
       game.weapons.view.visible = false;
       game.audio.downed();
       game.ui.showDowned(true);
@@ -212,6 +215,8 @@
       if (!this.downed || game.coins <= 0) return;
       game.coins--;
       game.coinsUsed++;
+      // 本波耗币标记：波次结算时该波失去"无复活 +100"（§9）。
+      game.waveCoins++;
       const config = this.reviveConfig;
       this.downed = false;
       this.downedRemaining = 0;

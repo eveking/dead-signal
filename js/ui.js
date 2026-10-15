@@ -33,8 +33,10 @@
         'reload-indicator reload-progress fps hitmarker damage-numbers killfeed ' +
         'wave-banner banner-title banner-subtitle banner-eyebrow toast damage-overlay ' +
         'result-eyebrow result-title result-description result-score result-wave result-kills ' +
+        'result-headshot result-coins result-coins-cell result-time result-breakdown ' +
+        'result-breakdown-text result-squad-board result-squad-list ' +
         'downed downed-ring downed-count downed-hint rally rally-count coins-panel coins-value ' +
-        'squad-panel squad-rows fog-veil';
+        'squad-panel squad-rows fog-veil boss-bar boss-name boss-fill boss-value';
       ids.split(' ').forEach((id) => { this.el[id] = document.getElementById(id); });
 
       this.healthPanel = this.el['health-value'].closest('.health-panel');
@@ -73,7 +75,7 @@
       this.el.killfeed.setAttribute('aria-relevant', 'additions');
       this.el.minimap.setAttribute('role', 'img');
       this.el.minimap.setAttribute('aria-label',
-        '战术雷达，北向上；绿色箭头为玩家，红点为敌人，蓝色圆点为 AI 队友，绿色方块为医疗包，琥珀色方块为弹药，青色方框为前线复活点，黑色圆区为雾散体黑雾（该区域雷达失效）。');
+        '战术雷达，北向上；绿色箭头为玩家，红点为敌人，蓝色圆点为 AI 队友，绿色方块为医疗箱，琥珀色方块为弹药箱，紫色方块为特殊武器箱，青色方框为前线复活点，黑色圆区为雾散体黑雾（该区域雷达失效）。');
       this.el['wave-pips'].setAttribute('aria-hidden', 'true');
       [this.healthBar, this.reloadBar].forEach((bar) => {
         bar.setAttribute('role', 'progressbar');
@@ -253,9 +255,9 @@
           Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1 ||
           projected.z < -1 || projected.z > 1) return;
 
-      var bounds = this.el['damage-numbers'].getBoundingClientRect();
-      var width = bounds.width || window.innerWidth;
-      var height = bounds.height || window.innerHeight;
+      // damage-numbers 是 inset:0 全屏容器，尺寸等价于视口；直读 innerWidth/Height，避免每发命中 getBoundingClientRect 强制同步布局。
+      var width = window.innerWidth;
+      var height = window.innerHeight;
       if (!(width > 0 && height > 0)) return;
       if (this.damageNumbers.length >= 16) this.damageNumbers.shift().node.remove();
       var node = document.createElement('span');
@@ -349,9 +351,9 @@
       this.el.downed.hidden = !downed;
       if (downed) {
         var remaining = Math.max(0, number(player.downedRemaining, 0));
-        var ratio = clamp(remaining / Math.max(0.001, number(revive.castTime, 3)), 0, 1);
+        var ratio = clamp(remaining / Math.max(0.001, number(revive.castTime, 60)), 0, 1);
         this.el['downed-ring'].style.setProperty('--p', String(ratio));
-        this._text('downed-count', remaining.toFixed(1));
+        this._text('downed-count', remaining >= 10 ? String(Math.ceil(remaining)) : remaining.toFixed(1));
         this._text('downed-hint', coins > 0 ?
           '按 E 消耗 1 枚复活币 · 在前线复活点归队' : '复活币耗尽 · 读条走完即失守');
       }
@@ -406,7 +408,8 @@
         else text = labels[m.order] || m.order;
         if (r.order.textContent !== text) r.order.textContent = text;
         var ratio = clamp(number(m.hp, 0) / Math.max(1, m.maxHp), 0, 1);
-        r.fill.style.width = Math.round(ratio * 100) + '%';
+        var fillW = Math.round(ratio * 100) + '%';
+        if (r.fillW !== fillW) { r.fillW = fillW; r.fill.style.width = fillW; }
       }, this);
     }
 
@@ -421,7 +424,22 @@
         effects.fogDensity(position) : 0;
       var opacity = clamp(density * 0.92, 0, 0.92);
       veil.hidden = opacity <= 0.01;
-      veil.style.opacity = String(opacity);
+      var opacityStr = String(opacity);
+      if (this._veilOpacity !== opacityStr) { this._veilOpacity = opacityStr; veil.style.opacity = opacityStr; }
+    }
+
+    // BOSS 血条：泰坦/巨型泰坦登场时显示，狂暴态（e.rage）变色（§8-④）。
+    _updateBoss(game) {
+      var boss = game.enemies && game.enemies.boss && !game.enemies.boss.dead ? game.enemies.boss : null;
+      this.el['boss-bar'].hidden = !boss;
+      if (!boss) return;
+      var hp = Math.max(0, number(boss.hp, 0));
+      var max = Math.max(1, number(boss.maxHp, hp || 1));
+      this._text('boss-name', (boss.def && boss.def.name) || 'BOSS');
+      this._text('boss-value', Math.ceil(hp) + ' / ' + Math.ceil(max));
+      var pct = (hp / max * 100) + '%';
+      if (this._bossPct !== pct) { this._bossPct = pct; this.el['boss-fill'].style.width = pct; }
+      this.el['boss-bar'].classList.toggle('rage', Boolean(boss.rage));
     }
 
     _updateHUD(game) {
@@ -430,8 +448,6 @@
       var current = weapons.current || {};
       var health = clamp(number(player.health, 100), 0, 100);
       var index = weapons.index === 1 ? 1 : 0;
-      var ammo = count(number(current.ammo, 30));
-      var reserve = count(number(current.reserve, 180));
       var total = this._totalWaves(game);
       var wave = clamp(count(game.wave), 0, total);
       var completed = clamp(count(game.completedWaves), 0, total);
@@ -442,12 +458,15 @@
       var active = game.wavePhase === 'active';
 
       this._text('health-value', Math.ceil(health));
-      this.el['health-fill'].style.width = health + '%';
+      var healthPct = health + '%';
+      if (this._healthPct !== healthPct) { this._healthPct = healthPct; this.el['health-fill'].style.width = healthPct; }
       this.healthPanel.classList.toggle('low', health <= 30);
-      this.healthBar.setAttribute('aria-valuenow', String(Math.ceil(health)));
+      var healthNow = String(Math.ceil(health));
+      if (this._healthNow !== healthNow) { this._healthNow = healthNow; this.healthBar.setAttribute('aria-valuenow', healthNow); }
       this._updateRevive(game, player);
       this._updateSquad(game);
       this._updateFogVeil(game, player);
+      this._updateBoss(game);
       this._text('score-value', padded(game.score, 5));
       var waveText = padded(wave, 2) + ' ';
       if (this.waveNumber.nodeValue !== waveText) this.waveNumber.nodeValue = waveText;
@@ -475,27 +494,42 @@
       this._text('radar-count', enemies ? '检测到 ' + alive + ' 个敌对信号' : '区域扫描中');
       this._text('weapon-name', current.name || (index === 0 ? 'AR-7 突击步枪' : '战术手枪'));
       var automatic = typeof current.automatic === 'boolean' ? current.automatic : index === 0;
-      this._text('weapon-mode', automatic ? 'AUTO' : 'SEMI');
+      // M5 特殊武器：加特林弹药位显示剩余秒数、备弹 ∞；火箭筒标"单发"。
+      var gatling = current.type === 'gatling';
+      var ammo = gatling ? Math.max(0, Math.ceil(number(weapons.specialTimer, 0))) : count(number(current.ammo, 30));
+      var reserve = count(number(current.reserve, 180));
+      this._text('weapon-mode', current.type === 'rocket' ? '单发' : automatic ? 'AUTO' : 'SEMI');
       this._text('weapon-slots', index === 0 ? '01 — PRIMARY' : '02 — SECONDARY');
       this._text('ammo-value', ammo);
-      this._text('reserve-value', reserve);
-      this.el['ammo-value'].setAttribute('aria-label',
-        '弹匣 ' + ammo + ' / ' + count(number(current.capacity, 30)) + '，备用弹药 ' + reserve);
+      this._text('reserve-value', gatling ? '∞' : reserve);
+      var ammoLabel = gatling ? '持续弹剩余 ' + ammo + ' 秒，备弹不限' :
+        '弹匣 ' + ammo + ' / ' + count(number(current.capacity, 30)) + '，备用弹药 ' + reserve;
+      if (this._ammoLabel !== ammoLabel) { this._ammoLabel = ammoLabel; this.el['ammo-value'].setAttribute('aria-label', ammoLabel); }
       this.ammoPanel.classList.toggle('empty', ammo === 0);
-      for (var i = 0; i < Math.min(2, this.weaponHints.length); i++) {
-        this.weaponHints[i].style.color = i === index ? 'var(--lime)' : '';
-        if (i === index) this.weaponHints[i].setAttribute('aria-current', 'true');
-        else this.weaponHints[i].removeAttribute('aria-current');
+      if (this._weaponIndex !== index) {
+        this._weaponIndex = index;
+        for (var i = 0; i < Math.min(2, this.weaponHints.length); i++) {
+          this.weaponHints[i].style.color = i === index ? 'var(--lime)' : '';
+          if (i === index) this.weaponHints[i].setAttribute('aria-current', 'true');
+          else this.weaponHints[i].removeAttribute('aria-current');
+        }
       }
-      this.el.crosshair.style.setProperty('--spread',
-        clamp(7 + Math.max(0, number(weapons.spread, 0)) * 180, 7, 40) + 'px');
+      var spread = clamp(7 + Math.max(0, number(weapons.spread, 0)) * 180, 7, 40) + 'px';
+      if (this._spread !== spread) { this._spread = spread; this.el.crosshair.style.setProperty('--spread', spread); }
       var reloadRemaining = Math.max(0, number(weapons.reloadRemaining, 0));
       var reloadDuration = Math.max(0, number(weapons.reloadDuration, 0));
       var reloadProgress = reloadRemaining > 0 && reloadDuration > 0 ?
         clamp(1 - reloadRemaining / reloadDuration, 0, 1) : 0;
       this.el['reload-indicator'].hidden = reloadRemaining <= 0;
-      this.el['reload-progress'].style.width = (reloadProgress * 100) + '%';
-      this.reloadBar.setAttribute('aria-valuenow', String(Math.round(reloadProgress * 100)));
+      var reloadPct = (reloadProgress * 100) + '%';
+      if (this._reloadPct !== reloadPct) { this._reloadPct = reloadPct; this.el['reload-progress'].style.width = reloadPct; }
+      var reloadAria = String(Math.round(reloadProgress * 100));
+      if (this._reloadAria !== reloadAria) { this._reloadAria = reloadAria; this.reloadBar.setAttribute('aria-valuenow', reloadAria); }
+    }
+
+    _formatTime(value) {
+      var seconds = Math.max(0, Math.floor(number(value, 0)));
+      return clamp(Math.floor(seconds / 60), 0, 99) + ':' + String(seconds % 60).padStart(2, '0');
     }
 
     _fillResult(won, game) {
@@ -508,10 +542,46 @@
       this._text('result-description', won ?
         '信号重新接通。隔离区暂时安全了。' :
         (deathWave > 0 ? '阵亡于第 ' + deathWave + ' 波。' : '') + '防线已经失守，但任务尚未结束。重整装备，再次出发。');
-      this._text('result-score', count(game.score));
+      // §9 总分 = (击杀分 + 波次分) × 难度倍率 × 硬核加成；练习模式 finalScore 即原始分。
+      this._text('result-score', count(number(game.finalScore, game.score)));
       var total = this._totalWaves(game);
-      this._text('result-wave', clamp(count(game.completedWaves), 0, total) + ' / ' + total);
+      this._text('result-wave', clamp(count(game.wave), 0, total) + ' / ' + total);
       this._text('result-kills', count(game.kills) + ' / ' + count(game.headshots));
+      var kills = count(game.kills);
+      var rate = kills > 0 ? Math.round(count(game.headshots) / kills * 100) : 0;
+      this._text('result-headshot', rate + '%');
+      this._text('result-coins', count(game.coinsUsed));
+      this._text('result-time', this._formatTime(game.time));
+      var giant = Boolean(game.waveMode && game.waveMode.allowCoins);
+      this.el['result-coins-cell'].style.display = giant ? '' : 'none';
+      this.el['result-breakdown'].hidden = !giant;
+      // 队伍存活榜要在练习模式（无 squad）先隐藏，否则早退会让上一局的榜单留在面板上。
+      var squad = game.squad;
+      this.el['result-squad-board'].hidden = !squad;
+      var list = this.el['result-squad-list'];
+      list.textContent = '';
+      if (!giant) return;
+      var difficulty = number((game.difficultyConfig || {}).scoreMultiplier, 1);
+      this.el['result-breakdown-text'].innerHTML =
+        '(击杀分 <b>' + count(game.killScore) + '</b> + 波次分 <b>' + count(game.waveScoreTotal) +
+        '</b>) × 难度 <b>×' + difficulty + '</b>' + (game.hardcore ? ' × 硬核 <b>×1.5</b>' : '') +
+        ' = 总分 <b>' + count(number(game.finalScore, game.score)) + '</b>' +
+        ' · 队友击杀 ' + count(game.squadKills) + '（按 60% 计入）';
+      if (!squad) return;
+      var board = squad.members.map(function (member) {
+        return { name: member.def.name, time: number(member.aliveTime, 0) };
+      }).sort(function (a, b) { return b.time - a.time; });
+      var self = this;
+      board.forEach(function (entry) {
+        var li = document.createElement('li');
+        var label = document.createElement('span');
+        label.textContent = entry.name;
+        var value = document.createElement('em');
+        value.textContent = self._formatTime(entry.time);
+        li.appendChild(label);
+        li.appendChild(value);
+        list.appendChild(li);
+      });
     }
 
     _drawMinimap() {
@@ -614,8 +684,20 @@
       ((effects && effects.drops) || []).forEach((drop) => {
         var position = drop.root && drop.root.position;
         if (!validPosition(position)) return;
+        if (drop.weapon) {
+          ctx.fillStyle = '#c18ff5';
+          ctx.fillRect(mapX(position.x) - 3.5, mapZ(position.z) - 3.5, 7, 7);
+          return;
+        }
         ctx.fillStyle = drop.type === 'health' ? '#91e9a0' : '#eac17a';
         ctx.fillRect(mapX(position.x) - 2.5, mapZ(position.z) - 2.5, 5, 5);
+      });
+      // 波间补给箱：与击杀掉落同色系，稍大一圈便于区分。
+      ((effects && effects.supplies) || []).forEach((supply) => {
+        var position = supply.root && supply.root.position;
+        if (!validPosition(position)) return;
+        ctx.fillStyle = supply.kind === 'health' ? '#91e9a0' : '#eac17a';
+        ctx.fillRect(mapX(position.x) - 3, mapZ(position.z) - 3, 6, 6);
       });
       ctx.fillStyle = '#ff796d';
       var enemies = this.game.enemies;

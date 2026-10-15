@@ -62,3 +62,24 @@
 
 /* M3 · 雾散体黑雾：玩家身处雾中的视野遮挡（规则层，表现留给 M6 优化） */
 .fog-veil{position:absolute;inset:0;pointer-events:none;z-index:6;background:radial-gradient(ellipse at center,rgba(5,8,7,.34) 0%,rgba(3,6,5,.94) 76%);opacity:0;transition:opacity .12s}
+/* M5 BOSS 血条：泰坦/巨型泰坦登场时显示在波次展示下方，狂暴态转红 */
+.boss-bar{position:absolute;top:112px;left:50%;transform:translateX(-50%);width:380px;display:flex;align-items:center;gap:11px;background:#0e1a16ba;border:1px solid #afca9433;padding:7px 13px;backdrop-filter:blur(5px)}
+.boss-bar>b{font:13px/1 var(--display);letter-spacing:2px;color:#ffb26e;white-space:nowrap}
+.boss-track{flex:1;height:8px;background:#33241f;border:1px solid #ff806e4d}
+.boss-track>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#8fae56,#dcfa86)}
+.boss-bar>span{font:8px var(--mono);letter-spacing:1px;color:#d8c9b6;white-space:nowrap}
+.boss-bar.rage{border-color:#ff5f4f88}
+.boss-bar.rage>b{color:#ff5f4f}
+.boss-bar.rage .boss-track>i{background:linear-gradient(90deg,#b3271b,#ff5f4f)}
+@media(max-width:700px){.boss-bar{width:min(80vw,300px);top:88px;padding:5px 9px}}
+
+/* M6 · 结算面板：爆头率/币耗/用时 + 计分明细 + 队伍存活时长榜（§9） */
+.result-extra{margin-bottom:14px;padding:12px 0}
+.result-breakdown{border:1px solid #afca9433;background:#0e1a1680;padding:9px 12px;margin-bottom:16px;font:9px/1.7 var(--mono);letter-spacing:1px;color:#b9c9ae}
+.result-breakdown b{color:#dcfa86;font-weight:600}
+.result-squad-board{margin-top:8px;border-top:1px dashed #afca9433;padding-top:8px}
+.result-squad-board>small{font-size:7px;letter-spacing:2px;color:#8ea08a}
+.result-squad-board ol{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.result-squad-board li{display:flex;justify-content:space-between;font-size:9px;color:#cfdac5}
+.result-squad-board li em{font-style:normal;color:#8fd0ff}
+@media(max-width:700px){.result-extra{flex-wrap:wrap;gap:8px}}

@@ -6,8 +6,16 @@
 
   // 脚下一步内允许抬升的高度：中央平台（0.35m）可以直接走上去，车厢/甲板（3.2m）只能靠斜坡上。
   const STEP_UP = 0.42;
+  // 头顶净空：板底高于脚底这么多就只是"能被穿过的桥"，不再当成墙。
+  const HEAD_CLEAR = 1.65;
   // 导航格子的通行半径：地面层与友方层共用，保证没有高度面时两层完全等价。
   const NAV_RADIUS = 0.56;
+  // 四邻方向对 (dx,dz)：流场/梯度每格都要用，共享常量避免热循环里反复分配临时数组。
+  const N4 = [1, 0, -1, 0, 0, 1, 0, -1];
+
+  function openCell(nav, x, z) {
+    return x >= 0 && x < nav.w && z >= 0 && z < nav.h && !nav.blocked[z * nav.w + x];
+  }
 
   DZ.World = class World {
     defMaterial(color, roughness = 0.85, metalness = 0.1) {
@@ -96,6 +104,8 @@
       this.defensePost = bag.defensePost;
       this.bossArena = bag.bossArena;
       this.squadPosts = bag.squadPosts;
+      this.supplyPoints = bag.supplyPoints || [];
+      this.specialBoxPoint = bag.specialBoxPoint || null;
       this.squadStart = bag.squadStart;
       this.playerStart = bag.playerStart;
       this.menuDecor = bag.menuDecor;
@@ -126,11 +136,43 @@
     }
 
     // 可行走顶面：只挡视线（blocker）不挡平面通行，阻挡交给 floorAt 的台阶高度规则。
+    // bottom 是板的下表面：实体（车厢 2.5m 厚）bottom 贴近地面，算墙；薄桥面 bottom 高，能被穿过。
     platform(minX, maxX, minZ, maxZ, top, material, thickness = 0.3) {
       const mesh = this.box((minX + maxX) / 2, top - thickness / 2, (minZ + maxZ) / 2,
         maxX - minX, thickness, maxZ - minZ, material);
       this.blockers.push(mesh);
-      this.surfaces.push({ minX, maxX, minZ, maxZ, y: top, kind: 'flat' });
+      this.surfaces.push({ minX, maxX, minZ, maxZ, y: top, bottom: top - thickness, kind: 'flat' });
+      return mesh;
+    }
+
+    // 高架步桥：0.24m 薄板 + 两侧护栏，板底净空 3m 以上，所以地面单位能从桥下走。
+    // 桥面高度只靠台阶限位与相邻顶面相连（车厢顶 3.2 → 桥面 3.6 差 0.4m，仍在 STEP_UP 内）。
+    bridge(minX, maxX, minZ, maxZ, top, options = {}) {
+      const m = this.mat;
+      const thickness = 0.24, rail = 0.55, railT = 0.1;
+      const mesh = this.platform(minX, maxX, minZ, maxZ, top, options.material || m.steel, thickness);
+      const alongX = maxX - minX >= maxZ - minZ;
+      const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+      for (const side of [-1, 1]) {
+        if (alongX) this.box(cx, top + rail / 2 - 0.02, cz + side * (maxZ - minZ) / 2, maxX - minX, rail, railT, m.rust, false, false);
+        else this.box(cx + side * (maxX - minX) / 2, top + rail / 2 - 0.02, cz, railT, rail, maxZ - minZ, m.rust, false, false);
+      }
+      // 防滑横纹 + 端部桥台，读起来是"能走的桥"而不是一块铁板。
+      const span = alongX ? maxX - minX : maxZ - minZ;
+      const steps = Math.max(2, Math.round(span / 1.3));
+      for (let i = 1; i < steps; i++) {
+        const t = -span / 2 + (i / steps) * span;
+        if (alongX) this.box(cx + t, top - thickness / 2 + 0.13, cz, 0.09, thickness + 0.02, (maxZ - minZ) * 0.86, m.black, false, false);
+        else this.box(cx, top - thickness / 2 + 0.13, cz + t, (maxX - minX) * 0.86, thickness + 0.02, 0.09, m.black, false, false);
+      }
+      for (const [x, z] of options.bearings || []) {
+        this.box(x, top - thickness - 0.2, z, 0.34, 0.4, 0.34, m.dark, false, false);
+      }
+      if (options.name) {
+        this.label(options.name, cx, top + 0.95, alongX ? minZ - 0.35 : maxZ + 0.35, 3, 0.42, {
+          rotation: alongX ? 0 : Math.PI / 2, color: '#c3d0a8'
+        });
+      }
       return mesh;
     }
 
@@ -167,7 +209,7 @@
       }
       this.surfaces.push({
         minX, maxX, minZ: Math.min(zLow, zHigh), maxZ: Math.max(zLow, zHigh),
-        kind: 'ramp', y: top,
+        kind: 'ramp', y: top, bottom: 0,
         ramp(x, z) { return T.MathUtils.clamp(top * (zLow - z) / (zLow - zHigh), 0, top); }
       });
       return mesh;
@@ -204,14 +246,29 @@
     }
 
     // ── 站立高度面 ────────────────────────────────────────────────
-    floorAt(x, z) {
+    // 传 footY（脚底高度）就只认"脚底 + 台阶限位"够得着的顶面：站在 3.6m 桥下的单位仍算 0m 地面，
+    // 不会被头顶的桥面当成悬崖；不传时保持旧语义（全局最高面）。
+    floorAt(x, z, footY = Infinity) {
       let h = 0;
+      const reach = footY + STEP_UP;
       for (const s of this.surfaces) {
         if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
         const v = s.kind === 'ramp' ? s.ramp(x, z) : s.y;
-        if (v > h) h = v;
+        if (v > reach || v <= h) continue;
+        h = v;
       }
       return h;
+    }
+
+    // 该点的顶面是否挡住脚底在 footY 的单位：够不着的顶面里，只有板底压进头顶净空以内的才算墙。
+    blocksAt(x, z, footY) {
+      const limit = footY + STEP_UP, head = footY + HEAD_CLEAR;
+      for (const s of this.surfaces) {
+        if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
+        const v = s.kind === 'ramp' ? s.ramp(x, z) : s.y;
+        if (v > limit && Math.max(s.bottom === undefined ? 0 : s.bottom, 0) < head) return true;
+      }
+      return false;
     }
 
     surfaceY(position, offset = 0) {
@@ -221,20 +278,23 @@
     canStand(x, z, radius = 0.43, fromY = 0) {
       const b = this.bounds;
       if (x < b.minX + radius || x > b.maxX - radius || z < b.minZ + radius || z > b.maxZ - radius) return false;
+      const reach = fromY + STEP_UP;
       for (const o of this.obstacles) {
+        // 带 top 的箱体（可行走箱顶的集装箱）只在脚底低于箱顶时才是墙。
+        if (o.top !== undefined && reach >= o.top) continue;
         const dx = x - Math.max(o.minX, Math.min(o.maxX, x));
         const dz = z - Math.max(o.minZ, Math.min(o.maxZ, z));
         if (dx * dx + dz * dz < radius * radius) return false;
       }
       // 脚底先落在目标顶面上：脚下高度只取 max(来源, 目标)，斜坡每步只升高一点点，
       // 若按来源高度限位就会被自己的坡度当成墙。
-      const here = this.floorAt(x, z);
-      if (here > fromY + STEP_UP) return false;
-      // 四周采样：脚底要被高出台阶限位的顶面顶住，就当撞上了墙/车厢侧壁。
+      const here = this.floorAt(x, z, fromY);
+      if (here > reach) return false;
+      // 四周采样：撞上的必须是实体（车厢侧壁、集装箱壁、斜坡），薄桥面不算墙。
       const k = radius * 0.72;
-      const limit = Math.max(fromY, here) + STEP_UP;
-      for (const [sx, sz] of [[k, 0], [-k, 0], [0, k], [0, -k]]) {
-        if (this.floorAt(x + sx, z + sz) > limit) return false;
+      const foot = Math.max(fromY, here);
+      for (let s = 0; s < 8; s += 2) {
+        if (this.blocksAt(x + N4[s] * k, z + N4[s + 1] * k, foot)) return false;
       }
       return true;
     }
@@ -264,8 +324,9 @@
     }
 
     // 把单位贴到所在顶面的高度上（玩家用带重力的版本，怪物/队友直接吸附）。
+    // 吸附按自身脚底选层：站在桥下的单位仍贴地面，不会被抬上 3.6m 的桥面。
     settleY(position) {
-      position.y = this.floorAt(position.x, position.z);
+      position.y = this.floorAt(position.x, position.z, position.y || 0);
       return position.y;
     }
 
@@ -302,8 +363,8 @@
       }
       while (read < write) {
         const i = queue[read++], x = i % w, z = Math.floor(i / w);
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, nz = z + dz;
+        for (let s = 0; s < 8; s += 2) {
+          const nx = x + N4[s], nz = z + N4[s + 1];
           if (nx < 0 || nx >= w || nz < 0 || nz >= h) continue;
           const ni = nz * w + nx;
           if (!open[ni] || reachable[ni] || Math.abs(floors[ni] - floors[i]) > STEP_UP) continue;
@@ -342,16 +403,24 @@
       const target = this.cell(position, nav);
       if (f.clock > 0 && target === f.cell) return;
       f.clock = 0.3;
-      f.cell = target;
       let seed = target;
       if (nav.blocked[seed]) {
-        let best = Infinity;
-        for (let i = 0; i < nav.blocked.length; ++i) {
-          if (nav.blocked[i]) continue;
-          const d = (i % nav.w - target % nav.w) ** 2 + (Math.floor(i / nav.w) - Math.floor(target / nav.w)) ** 2;
-          if (d < best) { best = d; seed = i; }
+        // 目标格被占：逐环向外找最近可走格（通常 1-2 环命中），20 环内找不到就保留旧场，下个节流周期再试。
+        const tx = target % nav.w, tz = Math.floor(target / nav.w);
+        seed = -1;
+        find: for (let r = 1; r <= 20; r++) {
+          for (let d = -r; d <= r; d++) {
+            if (openCell(nav, tx + d, tz - r)) { seed = (tz - r) * nav.w + tx + d; break find; }
+            if (openCell(nav, tx + d, tz + r)) { seed = (tz + r) * nav.w + tx + d; break find; }
+          }
+          for (let d = -r + 1; d <= r - 1; d++) {
+            if (openCell(nav, tx - r, tz + d)) { seed = (tz + d) * nav.w + tx - r; break find; }
+            if (openCell(nav, tx + r, tz + d)) { seed = (tz + d) * nav.w + tx + r; break find; }
+          }
         }
+        if (seed < 0) return;
       }
+      f.cell = target;
       // 一张共享流场替代每只怪物单独寻路，45 只怪物同屏也只需一次广度优先搜索。
       const distances = f.dist;
       distances.fill(-1);
@@ -360,8 +429,8 @@
       nav.queue[write++] = seed;
       while (read < write) {
         const i = nav.queue[read++], x = i % nav.w, z = Math.floor(i / nav.w);
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, nz = z + dz;
+        for (let s = 0; s < 8; s += 2) {
+          const nx = x + N4[s], nz = z + N4[s + 1];
           if (nx < 0 || nx >= nav.w || nz < 0 || nz >= nav.h) continue;
           const ni = nz * nav.w + nx;
           if (nav.blocked[ni] || distances[ni] >= 0) continue;
@@ -381,8 +450,8 @@
       const cell = this.cell(position, nav), x = cell % nav.w, z = Math.floor(cell / nav.w);
       let best = cell, score = distances[cell];
       if (score < 0) score = 32767;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, nz = z + dz;
+      for (let s = 0; s < 8; s += 2) {
+        const nx = x + N4[s], nz = z + N4[s + 1];
         if (nx < 0 || nx >= nav.w || nz < 0 || nz >= nav.h) continue;
         const index = nz * nav.w + nx;
         if (distances[index] < 0) continue;
@@ -420,9 +489,19 @@
       }
     }
 
-    container(x, z, w, h, d, mat, text) {
+    container(x, z, w, h, d, mat, text, walkTop = false) {
       this.box(x, h / 2, z, w, h, d, mat, true);
       this.box(x, h + 0.08, z, w + 0.1, 0.16, d + 0.1, this.mat.dark);
+      if (walkTop) {
+        // 箱顶开放：顶面给到盖板上表面，箱体仍是"从地面起的实体"（bottom 0），
+        // 所以地面单位照旧上不来，只有脚底已在箱顶的单位不再被侧壁挡住。
+        const lid = h + 0.16;
+        this.obstacles[this.obstacles.length - 1].top = lid;
+        this.surfaces.push({
+          minX: x - (w + 0.1) / 2, maxX: x + (w + 0.1) / 2,
+          minZ: z - (d + 0.1) / 2, maxZ: z + (d + 0.1) / 2, y: lid, bottom: 0, kind: 'flat'
+        });
+      }
       for (const side of [-1, 1]) {
         for (let i = 0.2; i < w; i += 0.36) this.box(x - w / 2 + i, h / 2, z + side * (d / 2 + 0.025), 0.07, h - 0.2, 0.09, mat);
         for (let i = 0.2; i < d; i += 0.48) this.box(x + side * (w / 2 + 0.025), h / 2, z - d / 2 + i, 0.09, h - 0.2, 0.07, mat);
@@ -645,7 +724,14 @@
       // §7 巨型泰坦决战战场：火车南段开阔区，南北正好 30m（含斜坡脚下与出发区前沿）。
       bag.bossArena = { minX: -22, maxX: 22, minZ: 14, maxZ: 44 };
       // 尖刀守西通道口、盾卫守中央平台南缘、游骑兵守火车车顶（§4 默认岗位，需要 navAlly 才上得去）。
-      bag.squadPosts = [new T.Vector3(-20.5, 0, -26), new T.Vector3(-3, 0.35, -23), new T.Vector3(0, 3.2, -2)];
+      // 车顶岗位取 z=-7.5：两条横桥带（z -13.5~-11.5 / -3.5~-1.5）会从车顶上方跨过，岗位留在两带之间才不会被抬上桥面。
+      bag.squadPosts = [new T.Vector3(-20.5, 0, -26), new T.Vector3(-3, 0.35, -23), new T.Vector3(0, 3.2, -7.5)];
+      // M5 波间补给固定 4 点位（§8）：中央平台×2、火车侧地面×1、出发区×1。
+      // 点位必须玩家徒步可达：车顶(0,4)canStand 为假，改放在车身东侧平地。
+      // 出发区点取 z=46：bossArena 到 z=44 为止，30 波决战的巨型泰坦踩不到补给位。
+      bag.supplyPoints = [new T.Vector3(-4.5, 0, -24), new T.Vector3(4.5, 0, -32), new T.Vector3(7, 0, 4), new T.Vector3(0, 0, 46)];
+      // 特殊武器箱固定投放位：中央平台中心（8/24/29 波开局用；15/20 波泰坦必掉用泰坦死亡位置）。
+      bag.specialBoxPoint = new T.Vector3(0, 0, -28);
 
       this.buildGiantLights();
       this.groundPlane(240, 34);
@@ -653,6 +739,7 @@
       this.buildGiantPlatform();
       this.buildGiantTrain();
       this.buildGiantCover();
+      this.buildGiantBridges();
       this.buildGiantStaging();
       this.markSpawns(bag.spawnPoints);
       this.markRevivePoints(bag.revivePoints);
@@ -782,13 +869,13 @@
 
     buildGiantCover() {
       const m = this.mat;
-      // 掩体区：车厢两侧的集装箱带，通道内侧留 8m 射界。
-      this.container(-13, 2, 4, 3.3, 9, m.orange, 'CARGO / 024');
-      this.container(13, -6, 4, 3.35, 9, m.green, 'B-07');
-      this.container(-13, -14, 4, 3.2, 6, m.steel, 'QUARANTINE');
-      this.container(13, -14, 4, 3.2, 6, m.green, '07 / HAZARD');
-      this.container(-13, 20, 4, 3.3, 7, m.green, 'SUPPLY 07');
-      this.container(13, 22, 4, 3.3, 7, m.orange, 'HAZARD MAT');
+      // 掩体区：车厢两侧的集装箱带，通道内侧留 8m 射界；六只箱的箱顶开放，交给栈桥连成高台路线。
+      this.container(-13, 2, 4, 3.3, 9, m.orange, 'CARGO / 024', true);
+      this.container(13, -6, 4, 3.35, 9, m.green, 'B-07', true);
+      this.container(-13, -14, 4, 3.2, 6, m.steel, 'QUARANTINE', true);
+      this.container(13, -14, 4, 3.2, 6, m.green, '07 / HAZARD', true);
+      this.container(-13, 20, 4, 3.3, 7, m.green, 'SUPPLY 07', true);
+      this.container(13, 22, 4, 3.3, 7, m.orange, 'HAZARD MAT', true);
       this.crate(-17, -8, 1.6);
       this.crate(17.2, 4, 1.5);
       this.crate(-17.5, 12, 1.35);
@@ -803,6 +890,27 @@
       for (const [x, z] of [[-20.5, -12], [20.5, -10], [-20.5, 6], [20.5, 18]]) {
         this.box(x, 1.37, z, 2.6, 0.1, 1.18, m.yellow);
       }
+    }
+
+    // 箱顶栈道 + 跨中央通道横桥（桥面 3.6m）。上桥路线沿用南端两条 15° 斜坡：
+    // 斜坡 → 装载甲板(3.2) → 车厢顶(3.2) → 横桥(3.6，0.4m 台阶) → 箱顶(3.36/3.46/3.51)。
+    // 怪物按 fromY=0 的地面单位规则依旧上不来，但薄板桥下 3.36m 净空可以从容穿过。
+    buildGiantBridges() {
+      const m = this.mat;
+      const deck = 3.6, walk = 3.62;
+      // 纵向连桥盖住同侧箱与箱之间的空隙：栈道上绝不允许留下 3.4m 深的断口（掉下去就爬不回来）。
+      // 与横桥的接头抬高 2cm，避免两层共面顶面在接缝处闪 z-fighting。
+      this.bridge(-14.1, -11.9, -11.5, -2, walk, { material: m.dark, name: 'WALKWAY W-1' });
+      this.bridge(-14.1, -11.9, 6, 17, walk, { material: m.dark, name: 'WALKWAY W-2' });
+      this.bridge(11.9, 14.1, -11.4, -10.2, walk, { material: m.dark });
+      this.bridge(11.9, 14.1, -2, 19, walk, { material: m.dark, name: 'WALKWAY E-2' });
+      // 两座横桥在中段落到车厢顶上，桥墩直接压在车顶钢板；两端各伸进箱顶 1m 以上保证连续。
+      this.bridge(-12, 12, -13.5, -11.5, deck, {
+        material: m.steel, name: 'CROSSBRIDGE W1', bearings: [[-3.4, -12.5], [0, -12.5], [3.4, -12.5]]
+      });
+      this.bridge(-12, 12, -3.5, -1.5, deck, {
+        material: m.steel, name: 'CROSSBRIDGE W2', bearings: [[-3.4, -2.5], [0, -2.5], [3.4, -2.5]]
+      });
     }
 
     buildGiantStaging() {

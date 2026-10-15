@@ -20,8 +20,11 @@
       this.state = 'menu';
       this.applySettings();
       this.wave = this.completedWaves = this.score = this.kills = this.headshots = this.squadKills = 0;
+      this.killScore = this.waveScoreTotal = this.waveCoins = 0;
+      this.finalScore = 0;
       this.coinsUsed = 0;
       this.deathWave = 0;
+      this.scoreMultiplier = 1;
       this.wavePhase = 'intermission';
       this.nextWaveIn = 4;
       this.time = 0;
@@ -80,6 +83,8 @@
       this.difficulty = s.difficulty;
       this.difficultyConfig = DZ.WAVES.difficulty(s.difficulty);
       this.coins = s.coins;
+      // 硬核加成（§9）：巨人城模式开局把复活币设为 0，最终得分 ×1.5。
+      this.hardcore = this.waveMode.allowCoins && s.coins === 0;
       this.allowRevive = this.waveMode.allowCoins && Boolean(this.waveMode.revive);
       this.totalWaves = this.waveMode.waves.length;
       this.waveSizes = this.waveMode.waves.map(w => w.total);
@@ -145,10 +150,19 @@
       this.player.reset();
       this.weapons.reset();
       if (this.waveMode.allowSquad) this.squad = new DZ.Squad(this);
+      // M3b 留的接缝：15/20 波泰坦击杀必掉特殊武器箱（30 波无 specialBox 标记不掉）。
+      this.enemies.onBossDeath = enemy => {
+        const cfg = DZ.WAVES.waveAt(this.waveMode, this.wave - 1);
+        if (this.waveMode.key !== 'giant' || !cfg.boss || !cfg.specialBox) return;
+        this.spawnSpecialBox(cfg.specialWeapon || 'rocket', enemy.root.position);
+      };
       this.time = 0;
       this.wave = this.completedWaves = this.score = this.kills = this.headshots = this.squadKills = 0;
+      this.killScore = this.waveScoreTotal = this.waveCoins = 0;
+      this.finalScore = 0;
       this.coinsUsed = 0;
       this.deathWave = 0;
+      this.scoreMultiplier = 1;
       this.wavePhase = 'intermission';
       this.nextWaveIn = 4;
       this.growlIn = 5;
@@ -215,13 +229,33 @@
       this.decorateMenu();
     }
 
+    // 固定投放（§8）：8/24/29 波开局刷中央平台，15/20 波泰坦必掉；波次结束未拾取则消失。
+    spawnSpecialBox(kind, position) {
+      this.effects.drop(position.clone ? position.clone() : position, kind, { waveEnd: true });
+      this.ui.toast(`特殊武器补给投放 · ${kind === 'rocket' ? 'R-80 火箭筒' : 'M-56 加特林'}`, 2.5);
+    }
+
+    // 波间补给：4 固定点位每波点亮（弹药×2 + 医疗×2 随机分配，点位轮换=类型轮换）。
+    spawnWaveSupplies() {
+      const points = this.world.supplyPoints;
+      if (!points.length) return;
+      const kinds = ['ammo', 'ammo', 'health', 'health'];
+      for (let i = kinds.length - 1; i > 0; --i) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = kinds[i]; kinds[i] = kinds[j]; kinds[j] = t;
+      }
+      for (let i = 0; i < points.length && i < kinds.length; i++) this.effects.spawnSupply(points[i], kinds[i]);
+    }
+
     startWave() {
       this.wave++;
       this.wavePhase = 'active';
+      this.waveCoins = 0;
       const giant = this.waveMode.key === 'giant';
       const cfg = DZ.WAVES.waveAt(this.waveMode, this.wave - 1);
       this.enemies.startWave(this.wave);
       this.audio.wave();
+      if (giant && cfg.specialBox && !cfg.boss) this.spawnSpecialBox(cfg.specialWeapon || 'gatling', this.world.specialBoxPoint);
       if (giant) {
         const isBoss = cfg.boss;
         const last = this.wave === this.totalWaves;
@@ -251,15 +285,25 @@
         if (this.nextWaveIn <= 0) this.startWave();
       } else if (this.enemies.pending === 0 && this.enemies.aliveCount() === 0) {
         this.completedWaves = this.wave;
-        this.score += this.waveMode.waveScore;
+        // §9 波次分 = 每波 300 + 该波未耗币奖励 100（练习模式 noReviveBonus 为 0，行为不变）。
+        const bonus = this.waveCoins === 0 ? (this.waveMode.noReviveBonus || 0) : 0;
+        this.score += this.waveMode.waveScore + bonus;
+        this.waveScoreTotal += this.waveMode.waveScore + bonus;
         if (this.wave === this.totalWaves) { this.finish(true); return; }
         this.wavePhase = 'intermission';
         this.nextWaveIn = this.waveMode.intermission;
         this.player.heal(20);
         this.weapons.addAmmo(60, 24);
         if (this.squad) this.squad.resupply();
+        // M5 波末：上一波的临时箱（特殊武器箱/倒地掉落）过期，再点亮本波补给。
+        if (this.waveMode.supplies) {
+          this.effects.expireWaveDrops();
+          this.effects.expireSupplies();
+          this.spawnWaveSupplies();
+        }
         this.audio.pickup();
-        this.ui.showBanner('区域暂时安全', `生命 +20 · 弹药已补给 · 准备第 ${this.wave + 1} 波`, `WAVE CLEARED / +${this.waveMode.waveScore}`, 4);
+        this.ui.showBanner('区域暂时安全', `生命 +20 · 弹药已补给 · 准备第 ${this.wave + 1} 波`,
+          `WAVE CLEARED / +${this.waveMode.waveScore + bonus}`, 4);
       }
       this.ui.update(dt);
     }
@@ -268,6 +312,11 @@
       if (this.state !== 'playing') return;
       this.state = won ? 'won' : 'lost';
       if (!won) this.deathWave = this.wave;
+      // §9 总分 = (击杀分 + 波次分) × 难度倍率 × 硬核加成；练习模式不乘（scoreMultiplied:false）。
+      const mult = this.waveMode.scoreMultiplied ?
+        this.difficultyConfig.scoreMultiplier * (this.hardcore ? 1.5 : 1) : 1;
+      this.scoreMultiplier = mult;
+      this.finalScore = Math.round(this.score * mult);
       this.player.downed = false;
       this.player.downedRemaining = 0;
       this.player.clearInput();

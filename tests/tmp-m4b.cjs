@@ -137,7 +137,7 @@ const HELPERS = {
   // 落点高度一律交给 floorAt：地面传 y=0，车顶传 y=3.2，与真实站立面一致。
   placePlayer(p) {
     const g = this.g();
-    g.player.position.set(p.x, 0, p.z);
+    g.player.position.set(p.x, p.y || 0, p.z);
     g.world.settleY(g.player.position);
     g.player.velocityY = 0; g.player.grounded = true;
     g.player.stagger = 0; g.player.invulnerable = 0; g.player.health = 100;
@@ -248,13 +248,13 @@ const CASES = {
     M.step(120);
     M.ok('无人可打时游骑兵守在同一顶面', Math.abs(ranger.root.position.y - 3.2) < 0.01,
       ranger.root.position.y.toFixed(2));
-    // 车厢侧脚下射界内的地面目标
-    const w = M.spawn('walker', { x: 6.5, y: 0, z: 4 });
+    // 西侧通道的地面目标：离车顶岗位 12m 以上，射线才不会被横桥板影截断。
+    const w = M.spawn('walker', { x: -12, y: 0, z: -6 });
     w.pathClock = 1e9;
     const hp0 = w.hp, ammo0 = ranger.ammo;
     let held = true;
     for (let i = 0; i < 900; i++) {
-      M.pin(w, 6.5, 4);
+      M.pin(w, -12, -6);
       M.step(1);
       if (Math.abs(ranger.root.position.y - 3.2) > 0.01) held = false;
     }
@@ -296,7 +296,7 @@ const CASES = {
   // '顶'组投放的自爆体沿斜坡冲顶起爆；其余敌种仍受地面规则约束。
   topRushClimb() {
     const M = window.__M4, g = M.g(), world = g.world;
-    M.placePlayer({ x: 0, z: -2 });
+    M.placePlayer({ x: 0, y: 3.2, z: -7.5 });
     M.vulnerable();
     M.ok('玩家已站到车顶', Math.abs(g.player.position.y - 3.2) < 0.01, g.player.position.y.toFixed(2));
     const b = M.spawnAt('顶', 'bomber');
@@ -528,12 +528,13 @@ const CASES = {
       g.world.renderer.shadowMap.enabled === true);
     M.step(60);
     M.ok('车顶能被玩家正常看见（floorAt 与视线一致）', (() => {
-      M.placePlayer({ x: 0, z: -2 });
+      // (0,-7.5) 是没被横桥盖住的一段车顶：脚下层就是 3.2，视线也确实被车体挡住。
+      M.placePlayer({ x: 0, y: 3.2, z: -7.5 });
       const ray = new window.THREE.Raycaster();
       ray.set(new window.THREE.Vector3(0, 5.2, 6), new window.THREE.Vector3(0, -1, -8).normalize());
       ray.far = 20;
       const hit = ray.intersectObjects(world.blockers, false)[0];
-      return Math.abs(g.world.floorAt(0, -2) - 3.2) < 0.01 && Boolean(hit);
+      return Math.abs(g.world.floorAt(0, -7.5) - 3.2) < 0.01 && Boolean(hit);
     })(), '车顶阻挡视线用 blockers 判定');
   },
 

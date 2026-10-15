@@ -43,7 +43,7 @@
 
 对应 §4。依赖：仅需现有 48×48 图（复活点 A/B/C 先用占位坐标）。
 
-- `player.js`：倒地进入 3 秒濒死读条（不再直接 `finish(false)`）；读条中按确认键消耗 1 币 → 前线复活点重生（波 1–9=A，10–24=B，25–30=C）+ 50 HP + 5 秒无敌（免疫伤害与击退）；币 0 或读条走完 → 失败结算（显示到达波次）。
+- `player.js`：倒地进入濒死读条（`revive.castTime`，现为 60 秒；2026-10-15 由 3 秒上调）（不再直接 `finish(false)`）；读条中按确认键消耗 1 币 → 前线复活点重生（波 1–9=A，10–24=B，25–30=C）+ 50 HP + 5 秒无敌（免疫伤害与击退）；币 0 或读条走完 → 失败结算（显示到达波次）。
 - F 传送：重生后 20 秒窗口（落地重置计时）内不限次数传向最近存活队友；M2 前队友不存在，先按"传向防守岗位点"实现接口，M2 接通。
 - HUD：币数计数、濒死读条环、传送窗口倒计时与可用提示；小地图高亮传送目标。
 - 濒死/复活/传送三组音效（`audio.js` 程序合成）。
@@ -166,12 +166,28 @@ M4b 高层玩法与战场规则（2 pd）：
 - **两套导航层**：`world.nav`（地面层，M4a 那套 `canStand(x,z,0.56)` fromY 0）与 `world.navAlly = buildAllyNav()`（友方层）。友方层先按 `floorAt` 取每格台面高度 `floors[i]`，`open = canStand(NAV_RADIUS, y)`，源点 = `canStand(NAV_RADIUS, 0)`（地面本来就踩得到的格），BFS 只沿 `|Δfloor| ≤ STEP_UP` 的边扩散，因此斜坡→装载甲板→车顶是唯一的登顶链路，悬崖永远不连通。**两层都用 `NAV_RADIUS = 0.56`**（常量在 `world.js` 顶部）：旧练习图没有高度面，两层必须逐格等价，这是"两套模式共存零变化"的硬条件（实测练习图 0 格差异；巨人城地面层不可达 1203 格、友方层 443 格）。
 - **流场绑网格**：`world.field(id, grid)` 建的 `f` 带 `grid`，`updateField(id, position, dt, grid)` 与 `nextStep(id, position)` 都从 `f.grid` 取 `w/h/minX/minZ/blocked/queue/floors/maxStep`。id 约定不变：`0..3` = 怪物目标流场（nav）、`'g0'..'g2'` = 队友岗位流场（navAlly）、`'e'+targetId` = 冲顶自爆体流场（navAlly）。**边规则在两处都要守**：`updateField` 的 BFS 扩散与 `nextStep` 的梯度挑选都查 `|Δfloors| ≤ maxStep`，只在一处加会出现"隔壁格绕斜坡才够得着、梯度却指向悬崖"的假短路（实测队友会顶着甲板壁原地抖动）。
 - **`canStand` 的踩面修正（M4b 关键）**：`limit` 从 `fromY + STEP_UP` 改成 `Math.max(fromY, floorAt(x,z)) + STEP_UP`，中心格单独先判 `floorAt(x,z) > fromY + STEP_UP` 即拒。原因：斜坡每米升 0.267m，四点采样的前方 0.3m 就比脚底高 0.48m > 0.42，旧判据会把坡道当成墙，任何单位（含玩家）都上不了坡。改后语义是"先踏上目标面，再看四周有没有更高的墙"，地面单位规则不受影响——`fromY = 0` 时目标面 > 0.42 依旧直接拒，3.2m 车顶对怪物仍是墙（实测 45 同屏 60s 内冲顶以外的怪 0 只上顶、玩家 0 受击）。
-- **队友高层岗位**：`bag.squadPosts` 第三席改成 `(0, 3.2, -2)`（火车车顶，§4 游骑兵默认位），`createMember` 仍用 `settleY` 把成员放在岗位本身，所以开局游骑兵直接在车顶；`squad.moveMember` 走 `'g'+index` on navAlly，`m.goal.y = world.floorAt(goal.x, goal.z)` 让支撑面随图现算。阵亡重生后实测沿"西通道 → 南出发区 → 西斜坡 → 甲板 → 车顶"自行返岗（约 23s、路程 >15m）。**F 传送**：`squad.nearestAlive()` 现在返回带 y 的坐标（在队友侧方 1.3m 同层），`player.land()` 用 `position.y` 作 `fromY`，所以能传上 3.2m 车顶而不是掉到车厢底下。
+- **队友高层岗位**：`bag.squadPosts` 第三席改成 `(0, 3.2, -2)`（火车车顶，§4 游骑兵默认位），`createMember` 仍用 `settleY` 把成员放在岗位本身，所以开局游骑兵直接在车顶；`squad.moveMember` 走 `'g'+index` on navAlly，`m.goal.y = world.floorAt(goal.x, goal.z)` 让支撑面随图现算。阵亡重生后实测沿"西通道 → 南出发区 → 西斜坡 → 甲板 → 车顶"自行返岗（约 23s、路程 >15m）。**F 传送**：`squad.nearestAlive()` 现在返回带 y 的坐标（在队友侧方 1.3m 同层），`player.land()` 用 `position.y` 作 `fromY`，所以能传上 3.2m 车顶而不是掉到车厢底下。（2026-10-15 追加：该席已挪到 `(0, 3.2, -7.5)`，原因见下方"箱顶栈道"备忘。）
 - **冲顶自爆体**：`def.topRush`（只有 bomber 登记）+ `entry.group === '顶'` 才置 `e.topRush`（`spawn()` 里），非顶组投放完全不变。三处差异：移动 `world.move(p, …, e.radius, e.topRush ? p.y : 0)`（其余怪仍传 0）、寻路 `nextStep('e'+targetId)` on navAlly、选目标 `chooseTarget` 里 `u.position.y > 1.2` 时 `score += 40`（同层偏好，实测车顶队友会抢走冲顶个体的仇恨）。**判断点**：`+40` 是经验值，量级与 `nearest` 规则的 `-d` 相当，M6 复核"冲顶个体该不该优先撞高层队友而不是就近地面目标"。另外 `bomber.think` 里加了 `e.topRush && target.y - e.y > 1.6 → 不起爆`，否则冲顶个体会在坡脚对着车顶玩家提前引信（`detonate/area` 本来就有 2.2m 同层门，不会误伤地面）。
 - **BOSS 净空与战场**：净空半径沿用 M3b 的 `def.radius × entry.bossScale`（0.968 / 1.232），M4b 只重排了点位——南组 `spawnGroups['南'] = [(-6,0,30), (6,0,30)]`，巨型泰坦 `spawnPoints: ['南']` + `arenaGroup: '南'`，泰坦仍走西/东/北。`bag.bossArena = {minX:-22, maxX:22, minZ:14, maxZ:44}`（§7 决战段，南北正好 30m，含南组两点与 C 阶段复活点）；`spawn()` 只在 `entry.group === def.arenaGroup` 时挂 `e.arena`，移动后 `clamp` 到框内。**判断点**：① 测试直刷（不带 group）永远 `arena === null`，所以 tmp-m3b 的"冲刺位移 ≈16m"断言不受影响；② 玩家站在战场以北（z < 14）会把巨型泰坦钉在边界上原地打转，v1 接受（BOSS 不越界是 §7 的硬要求），M6 若要手感可改成"玩家脱离战场超过 N 秒才解除限制"。30 波数据 `groups` 已由 `['北']` 改 `['南']`，15/20 波泰坦不受限。
 - **氛围与阴影**：`buildGiantLights` 的平行光阴影取景 `46×148`（`left/right ±46, top/bottom ±74, far 160`）覆盖 96m 长图，`shadowMap.autoUpdate = false` + 换图 `needsUpdate = true`（静态复烘）；点光数组新增 `(0, 7.2, 18)` 暖色作业灯照斜坡/装载甲板。雾仍是 `FogExp2` 0.0115，`useMap` 按 bag 换 `background/fogDensity`。M5 加补给点亮光、M6 加夜景都要重烘一次。
 - **冒烟实测**（82 条断言全绿，页内定步长推进）：navAlly 规格/超集关系/车顶·斜坡·甲板格只友方可达/车头残骸顶面对谁都不可达/换图清流场 9 项；游骑兵车顶射击位 8 项（开局即在 3.2m、狙杀地面目标 80→0、耗弹 8→3、不离顶、地面怪 90/90 不掉血）；阵亡重生自行返岗 6 项；冲顶爬升 9 项（坡脚起步、中途经过 0.5–3.1m、走南端两条斜坡而非穿墙、车顶起爆对车顶玩家 60 伤、起爆后仍在顶面）；地面照常威胁 5 项（顶/西组标记、车顶无人时贴地、两只都贴脸起爆、高层队友抢仇恨）；BOSS 净空 10 项（0.968/1.232、三组 60 次采样 0 泄漏、白名单）；§7 战场 10 项（30m 纵深、绑定、战场外玩家仍触发冲刺、16m 冲刺被边界截住、追击北方玩家 20s 0 越界、仇恨不被战场改写、手刷 BOSS 与 15/20 波泰坦不受限）；30 波长图链路 7 项；练习模式零变化 9 项；氛围 5 项；45 同屏性能 4 项。
 - **留给 M5/M6**：M5 的补给点位要避开 `bossArena`（否则 30 波 BOSS 踩点）；`squadPosts` 只有第三席在高处，若 M5 要给队友加高层专属指令需同步 `ui` 的岗位提示；火箭筒 2.5m AoE 记得沿用 `area()` 的 2.2m 同层门；冲顶自爆体在 navAlly 上每只一张流场（0.3s 节流），M6 若做 InstancedMesh/LOD 别把 `'e'+id` 流场并入地面层。
+
+实现备忘（2026-10-15 追加：集装箱顶栈道 + 跨中央通道横桥）：
+
+用户诉求"刷怪点的集装箱顶部加桥梁，可以从中间走过去"。四项定稿决策：横向跨通道连两侧（2 座，不做第 3 座南段横桥）、沿用南端两条 15° 斜坡上桥（不加北端额外坡道）、桥面 3.5m（实现取 3.6m，见下）、箱顶可站、不改队友与导航现有逻辑（接受近似）。
+
+- **三条底层判定（这是本功能的真改动点，其余都是几何）**：
+  - `floorAt(x, z, footY = Infinity)` 加第三参"脚底高度"：只在 `v ≤ footY + STEP_UP` 的面里取最高，**默认 `Infinity` 保留旧的全局最高面语义**，所以没传参的旧调用点（`markSpawnPoints/markRevivePoints/defensePost` 等）逐字节不变。桥下 `floorAt(..., 0) === 0`、不传参 `=== 3.6`，这就是"薄板是天花板不是墙"的判据来源。
+  - 新增 `blocksAt(x, z, footY)`：一个面挡路的条件是"顶面高于 `footY + STEP_UP` **且** 板底 `bottom < footY + HEAD_CLEAR(=1.65)`"。`surfaces` 因此新增 `bottom` 字段：`platform()` 记 `top - thickness`，`slope()` 与箱顶 lid 记 `bottom: 0`（坡道和箱体从地面起就是实体，M4a 语义不变），桥 `bottom = 3.36` → 对地面单位是空气。`canStand` 的四向采样全部改走 `blocksAt`，`settleY` 传 `position.y` 当脚底。
+  - `obstacles` 新增可选 `top`（可行走箱顶的盖板高度）：`canStand` 里 `fromY + STEP_UP >= o.top` 就跳过该障碍。于是 `container(x, z, w, h, d, mat, text, walkTop)` 的第 8 参打开箱顶——lid 面 `y = h + 0.16`、`bottom: 0`，脚底已在 3.36 的单位不再被侧壁挡住，`fromY = 0` 的怪照旧撞墙。**地面单位规则一行没动**，`nav` 地面层仍把箱/车顶标为不可通行，`navAlly` 自动覆盖新的整张高层网络。
+- **`HEAD_CLEAR = 1.65` 与 `bridge()` 的几何**：桥面 0.24 薄板 + 0.55 护栏 + 防滑横纹 + `options.bearings` 桥墩（压在车顶钢板上）+ `options.name` 标识（沿 X 的桥 `rotation: 0`、沿 Z 的 `Math.PI/2`，沿用 M4a 的标识朝向结论）。
+- **桥面为什么是 3.6 不是 3.5**：唯一台阶判据 `STEP_UP = 0.42`，车厢顶/装载甲板 3.2 → 3.5 差 0.3 能走，但箱顶 lid 有 3.36/3.46/3.51 三档，3.46 与 3.5 只差 0.04 会共面闪 z-fighting，3.51 又高于桥面变成反向台阶。取 3.6 让"车顶→桥"是 0.4m 台阶、"桥→箱顶"恒为向下 ≤0.24m，两个方向都在判据内。栈道面 3.62（比横桥高 2cm）纯粹为了接缝不共面。
+- **点位（`buildGiantBridges()`，紧跟 `buildGiantCover()` 调用）**：西带栈道 `x -14.1..-11.9` 分 z `-11.5..-2`（W-1）与 `6..17`（W-2）；东带 `x 11.9..14.1` 分 z `-11.4..-10.2` 与 `-2..19`（E-2）；两座横桥 `x -12..12` 落在 z `-13.5..-11.5`（W1）与 `-3.5..-1.5`（W2）。六只掩体箱（`buildGiantCover`）第 8 参全部 `true`。
+- **两个必须记住的坑**：① 纵向栈道必须完整盖住同侧箱与箱之间的空隙——留断口就是 3.4m 深的死槽，掉下去 `STEP_UP` 0.42 爬不回来（W-1/W-2 之间 z -2..6 的缺口是横桥 W2 接管的路径，不是断口）。② 横桥会从车顶上方跨过，游骑兵岗位 `(0, 3.2, -2)` 正好在 CROSSBRIDGE W2 的 footprint 里，`floorAt(footY=3.2)` 会把他抬上 3.6 桥面 → 岗位挪到两带之间的 `(0, 3.2, -7.5)`。
+- **调用点补脚底高度**：`player.js` 重力与击退两处 `floorAt(..., this.position.y)`；`effects.js` 六处贴地调用传源高度（`position.y || 0` / `point.y || 0` / `p.p.y`），否则桥下的血雾/粒子/补给箱会被抬到桥面上；`squad.js` 的 `m.goal.y = world.floorAt(x, z, p.y)` 用队友自身高度。
+- **冒烟实测**（页内定步长，`index.html` 与单文件版各跑一遍）：桥下 `floorAt(...,0)=0` 而不传参 3.6；箱顶 lid 3.36/3.46/3.51 可站、`fromY=0` 不可上；车顶全局最高仍 3.2 且地面单位不可上；`nav` 地面层封闭 / `navAlly` 箱顶开放；玩家四层（0 / 3.2 / 3.36 / 3.6）稳定站立、走出边界转自由落体；`segmentClear` 证明站桥面不是无敌点（地面射手能打到你）；高台链路 南斜坡→装载甲板→车顶→横桥→西带栈道→最北箱 全程不下坡；练习图 `surfaces.length === 0` 不变（`walkTop` 是 opt-in）；1500 帧波 13 模拟 0.18ms/帧、0 悬空/NaN 敌人。
+- **单文件版同步方式（改了做法，后续沿用）**：`DEAD-SIGNAL-单文件版.html` 内联了压缩版 three.js（单行几十万字符），**不能整文件重拼**。按 `  <script>` / `  </script>` 行定位 11 个块（第 1 块是 three.js，跳过），其余 10 块与 `js/waves|world|audio|player|effects|enemies|squad|weapons|ui|game.js` 一一对应，逐行比对后整块替换（行内 splice，倒序应用避免索引漂移）。本轮只有 world/player/effects/squad 四块陈旧，替换后 10 块 diff 归零、body 与 styles.css 段 diff 归零。
 
 ## M5 · 补给与特殊武器（3 pd）
 
@@ -183,17 +199,58 @@ M4b 高层玩法与战场规则（2 pd）：
 
 验收：8 波开箱→换加特林→29 波怪潮体验；火箭筒对暴君/泰坦 AoE 伤害正确；补给点位轮换记录。
 
-## M6 · 调平、性能、结算与打包（3 pd）
+→ 达成：96 条 M5 断言全绿（tmp-m5.cjs，含 practiceZero 练习模式零变化 13 条）；同步回归 M3a 139、M3b 67、M4b 81/82（唯一未达是 perf45"45 同屏含渲染 <40ms"环境门：本机今日软件渲染抖动，用 `git show HEAD` 原版单文件同条件 A/B 实测 76–79ms vs M5 构建 79–83ms，无 M5 引入的渲染回归）。单文件版已重打包并在页内复跑 M5 全绿。
+
+实现备忘（M5，供 M6 接续）：
+
+- **模式开关全部走 `waveMode`**：`GIANT_MODE = { dropLife: 20, supplies: true }`、练习 `{ dropLife: 35, supplies: false }`。掉落寿命、浮字、波间补给、特殊箱一律读 `game.waveMode.dropLife / .supplies`，练习模式行为逐字节不变（practiceZero 13 条守门）。`effects.labelMode` 是**实时 getter**（不是构造期快照），菜单切模式后不必重建 effects。
+- **4 固定补给点位**（`world.js` giant bag `supplyPoints`）：中央平台 ×2（-4.5,-24 / 4.5,-32）、**车身东侧平地 (7,4)**、出发区 (0,46)。两个判断点：① 原方案的车顶点 (0,4) 实测 `canStand=false`（floorAt=3.2 但徒步不可达），补给位必须是玩家能走到的格，故改到车侧地面；② 出发区点取 z=46，因为 `bossArena.maxZ=44`，30 波巨型泰坦踩不到补给位。类型每波随机洗牌分配（弹药×2+医疗×2），同屏上限 8（`effects.supplyLimit`），波末 `expireSupplies()/expireWaveDrops()` 统一过期。
+- **拾取经济只有一个入口**：补给箱 = `weapons.addAmmo(90, 36)`（自然吃 420/180 上限）+ 医疗 35；旧击杀掉落仍是 60/24 + 医疗 30，两套数字分开断言。拾取门：水平 `d ≤ 1.45` 且 `|player.y - base| ≤ 1.2`（base 用 `world.floorAt`，车顶箱要站车顶才捡得到）。
+- **特殊武器 = 手枪槽 + 一次性快照**：`weapons.grantSpecial(kind)` 首次把当前手枪 `Object.assign({}, items[1])` 存进 `this.special.pistol`，之后 `stowSpecial()/dropSpecial()` 都还原这份快照（期间 addAmmo 到手枪的量不回填，判断点已断言）。火箭/加特林耗尽或主动放弃自动回手枪。队友拾取走 `squad.pickups(m)` 的 `if (d.weapon) continue` 分支——**队友永远不吃特殊武器箱**（§4）。
+- **玩家倒地掉枪**：`player.goDowned()` 调 `weapons.dropSpecial()`，箱子落身旁 0.5m 内、`waveEnd:true`（波末消失），爬起来踩回去可重新装备；练习模式没有濒死流程，不掉。
+- **火箭筒两个关键判断点**：① 实现为**hitscan + 立即起爆**（不是飞行弹体）：`shoot()` 里对命中点 `enemies.explode(point, 2.5, 450)`，装填走既有 reload 机制（capacity 1 / reserve 3 / reloadTime 3.2s，耗尽自动开装、装完 1 发）。② **命中机体时爆点下移到该敌人脚下**（`hit.object.userData.enemy → enemy.root.position`）：泰坦 2.2 倍体型躯干在 ~2.9m，沿用 `area()` 的 2.2m 同层门会把直射目标自己筛掉（实测 0 伤害），落脚下后同层门语义与"只伤地面邻怪"都不变（车顶目标 450→0 断言在案）。火箭不吃暴君步枪减伤（weapon 传 'rocket'）。
+- **加特林数值链**：`43 × (1/0.105) ≈ 410 DPS ≈ 步枪 257 × 1.6`；30s 持续弹用 `weapons.specialTimer`（HUD 弹药位显示 ceil(specialTimer)、备弹位 '∞'）；`weapons.heavy` getter → `player.js` 移速 `(sprinting?7.3:4.5)*0.6` 且 `jumpQueued` 被吞（实测 4.50→2.70 m/s、切回步枪同帧解除禁跳，velocityY 阈值 >5.5 起步）。
+- **投放波次表**（waves.js 数据，`specialBox/specialWeapon`）：8/24=gatling、15/20/29=rocket。开局箱在 `game.startWave()`（`cfg.specialBox && !cfg.boss`）刷 `world.specialBoxPoint`（中央平台 (0,-28)）；15/20 泰坦必掉走 `enemies.onBossDeath` 接缝（M3b 留的），落点=泰坦死亡位置；30 波巨型泰坦不带 specialBox 不掉箱；`game.newGame()` 里挂接。
+- **BOSS 血条**：`ui._updateBoss()` 读 `enemies.boss`，死亡/离场即 `hidden`；狂暴变色只有巨型泰坦（§7，`e.rage` 由 `BOSS_BEHAVIOR.think` 在 hp≤40% 置位，think 有 0.45s 出生动画门，测试要 step≥40 帧）。小地图新增补给（绿/琥珀 6px）与特殊武器箱（紫 7px）图例。
+- **ui.update 位置（本里程碑踩过坑）**：曾把 `ui.update(dt)` 移出 `game.update()` 到 rAF 循环节流，导致 M3a/M4b 依赖"步进即刷 UI"的断言全红，已还原——**M6 若重做这个优化，必须同步给 tests/*.cjs 提供显式 `g.ui.update(dt)` 钩子**。
+- **单文件打包**：拼接脚本一律用 `replace(str, () => content)` 函数形式——字符串形式会把内联 three.min.js 里的 `$&/$`/$'` 当捕获模式展开，实测往 bundle 里注入 `</body>` 直接砸烂解析（HEAD 版无此问题）。
+- **留给 M6 的调平项**：补给数量/点位密度（现在 4 点各 1 箱，M6 可按难度倍率增减）；加特林 30s 全程 DPS 实弹耗与步枪对照手感复核；火箭 4 发对泰坦 450×4 vs 6000 血的清场节奏；`perf45` 渲染门在 InstancedMesh/LOD 落地后重新校准阈值；难度倍率（hard/nightmare）目前只作用敌人，不改补给/箱量，M6 决定是否随难度。
+
+## M6 · 调平、性能、结算与打包（3 pd）— 已完成 2026-10-15
 
 对应 §9、§10-8。
 
 - 计分接入：击杀表分、波次 300+无复活 100、BOSS 分、难度/硬核倍率、队友 60% 折算。
 - 结算面板：到达波次、爆头率、币耗、用时、队伍存活榜；失败界面保留击杀分。
-- 性能：敌人 InstancedMesh 或距离 LOD，45 同屏 + 黑雾 + 阴影稳定 60fps（低配 1.5 pixelRatio 策略沿用）。
+- 性能：**距离 LOD**（弃 InstancedMesh，理由见备忘）+ 黑雾表现层减负 + 新性能门重校准。
 - 三难度数值表落地复测（高级/噩梦兵力取整）。
-- 重建 `DEAD-SIGNAL-单文件版.html` 打包；`tests/browser.cjs` 增加全 30 波快进冒烟脚本。
+- `tests/tmp-m6.cjs`（12 case / 117 条断言，含**全 30 波快进冒烟 `fullRun30`**）；重建 `DEAD-SIGNAL-单文件版.html`（行块 splice 打包法）。
 
 验收：完整通一次 30 波（可用调试跳波），普通难度总时长目标 60–75 分钟；单文件版双击可玩。
+  → **节奏目标已于 2026-10-15 定稿改口径为"普通难度 30–45 分钟"，兵力/血量数值表与间奏一律不动**（推导见下方"节奏"条目）。其余验收项达成。
+
+→ 达成：tmp-m6 117 条全绿（开发页与单文件页各跑一遍，单文件页 117/117）；同步回归 **M3a 139 / M3b 67 / M4b 82 / M5 95 = 383 条全绿**，两页控制台 0 报错（只有 three r160 的 min 版弃用警告）。30 波长图链路实测：`won / 30 / 30`、24601 帧定步长（模拟 13.7 分钟战斗）、峰值同屏 45 不越界、15/20/30 三次 BOSS 全部刷出并击杀、每波 4 箱补给、波次分 12000 与击杀分逐笔吻合。唯一与原文有出入的是节奏：按血量预算建模只有 21–35 分钟，已与你确认把目标口径改到 30–45 分钟、不动数值表（见下方"节奏"条目）。
+
+实现备忘（M6）：
+
+- **计分链路只有一个入口**：击杀分写在 `enemies.damage()` 的死亡分支——`unitId === 0` 走 `round(score × (headshot ? 1.5 : 1))` 并同时累加 `kills/headshots`；`unitId !== 0`（队友）走 `round(score × 0.6)`，**不记 kills/headshots、不驱动每 5 杀医疗 / 每 3 杀弹药掉落**。`game.killScore` 与逐笔累加在 30 波实跑里分毫不差（174734/174734）。波次分写在 `game.update()` 的结算分支：`waveMode.waveScore(300) + (waveCoins === 0 ? noReviveBonus(100) : 0)`，`waveCoins` 在 `startWave()` 清零、`player.tryRevive()` 里 +1。总分只有一处乘法：`game.finish()` 的 `mult = waveMode.scoreMultiplied ? difficultyConfig.scoreMultiplier × (hardcore ? 1.5 : 1) : 1`，`finalScore = round(score × mult)`。练习模式三个字段（`waveScore 250 / noReviveBonus 0 / scoreMultiplied false`）就把 §9 整条规则从练习图里摘干净，`practiceZero` 5 条守门。
+- **爆头优先于暴君减伤（M3a 留下的复核项，结论：保留现状）**：`rifleResist 0.2` 只在 `weapon === 'rifle' && !headshot` 生效，×2 发生在 `weapons.js`（`gun.damage × (headshot ? 2 : 1)`），减伤发生在 `enemies.damage()`。实测步枪 27 → 躯干 **21.6**、爆头 **54**；暴君 500 血 → 躯干 24 发、纯爆头 10 发。判定成立且方向正确（爆头永远不比躯干更差），不改代码。
+- **threat「记忆优先、无记忆最远」结论：保留**。§7 原文只说"最远仇恨"，实现是 `memory + d × 0.01`（40 分伤害记忆 > 任何距离差）。实测：无记忆时选 20m 处、有记忆时 3m 处的近身单位反超——正是"打了 BOSS 它就盯你"的手感，比纯最远更可解释，写进本节作为定稿。
+- **冲顶自爆体的 +40 同层偏好结论：保留**。实测车顶有队友时，'顶'组自爆体 3 次全部改咬高层队友（普通自爆体 0 次，仍打玩家）。这不是 bug：地面怪照旧被玩家吸走，冲顶个体专门处理高台，两条线不打架。
+- **BOSS 开局缓冲与技能窗口定稿**（M3b 自定值，本轮逐项实测）：`chargeCd 3s / slamCd 5s / summonCd = every × 0.6 = 12s`；接触近战 CD 泰坦/巨型泰坦 2.0s（普通 1.1、暴君 1.7）；震波**只在跌破 60% 血时结算一次**（`skill.quakeDone` 锁定，实测 0→1→1），狂暴在 40% 触发（速度 3.3、CD×0.6、砸地 5m→6.5m）；连砸一次 2 下、实测间隔 **0.517s**，收尾 `slamCd` 回到 `bossCd(8)`（狂暴态 4.8，实测 4.43 是空跑帧扣的）。全部维持，不再动。
+- **雾散体参数维持** `every 6 / radius 6 / life 8`（无开局折扣）；黑雾表现层改的是不透明度的**双层分工**：体团 `opacity` 上限 0.82→**0.5**，贴地 skirt **0.78** 并换成径向 `alphaMap` 羽化（`makeFogEdge()`），看着比单层更"有厚度"、overdraw 更少。
+- **补给/箱量不随难度**（M5 抛出的问题，结论：不变）。三难度 `spawnWaveSupplies()` 都点 4 箱（弹药×2+医疗×2），hard/nightmare 只放大敌人。理由：补给位是固定点位池（4 点、上限 8），加量会逼 M4b 的 `bossArena` 与点位重排，而难度已经通过 2.2× 血量和 1.35× 兵力给了压力。
+- **加特林/火箭对 BOSS 的节奏（实测，作为调平依据而非改动）**：加特林 30s 全程 **285 发 / 12255 理论伤**——单挑泰坦（6000）够、单挑巨型泰坦（15000）**不够**，必须留步枪收尾；火箭 `450 × 4 = 1800`，泰坦需 14 发、巨型泰坦需 34 发，所以它是"破阵/清群"手段而不是 BOSS 杀器。两处都符合 §7 的意图，数值表不动。
+- **性能方案：距离 LOD，不是 InstancedMesh**。三个硬约束决定了选型——① 每只有独立 `skin/cloth/eye` 材质实例做暴君闪烁与狂暴变色，② 走路/冲刺/砸地是逐怪骨骼式动画，③ 射线命中要 `hitTargets()` 返回真实 Mesh（LOD 只关 `e.detail` 与 `e.shadow`，命中盒 40 个不随档位变化，已断言）。InstancedMesh 要同时放弃这三项。实现：`lodNear 26 / lodFar 52`，非 BOSS 每 0.35s 依相机**水平**距离重算，0 档全开 / 1 档收装饰 / 2 档再收地面投影，BOSS `lodLevel` 恒 -1。测试把两阈值置 1e9 即关闭 LOD 做 A/B。
+- **新性能门口径（`perfLodAB` 6 条）**：45 同屏（档位分布实测 23/11/11）+ 6 团黑雾 + 静态阴影同场。① 纯模拟 `g.update` **<8ms/帧**（实测 LOD 2.55 / 全细节 2.62）；② 带渲染帧 **<160ms 且 LOD ≤ 全细节 ×1.1**（实测 LOD 20.1 / 全细节 25.1）。绘制量对照必须**冻在同一帧**（`world.render()` 只读 `renderer.info`）：A/B 各自推进模拟的话，粒子/尸体/位移噪声会盖过 LOD 省的几百个三角形——实测这样会得到"LOD 反而多 1%"的假负结果。冻结后是 **25014 vs 25922 三角形（省 3.5%）、1382 vs 1454 draw call**。
+- **绝对帧时不能当 60fps 证据**：本机是 SwiftShader 软渲染 + `document.hidden === true`（内部浏览器窗口不可见），空场景单次 `render()` 就从 11ms 涨到 53ms。所以门限取"160ms + A/B 相对"而不是"16.7ms"，断言 info 里固定打印 `document.hidden`，并且 A/B 交替跑三轮各取最小值（抖动能到 1.5×）。真 GPU/可见窗口的 60fps 结论要另测。
+- **`fullRun30` 的取样口径**：`g.update(1/30)` 定步长 + 间奏压到 0.2s + **每 600 帧全清一次**（早期版本每 12 帧全清，结果同屏峰值只有 2、队友 0 击杀，"45 同屏不越界"和"队友 60% 折算"两条断言全测不到东西）。改节奏后：峰值 45、玩家 800 杀 / 队友 119 杀、六敌种全上场、`killScore` 与逐笔记账吻合。
+- **结算面板**：`ui._fillResult()` 输出 到达波次 `N / 30`、击杀/爆头 `N / N`、爆头率 `round(headshots/kills×100)`（kills=0 → 0%）、币耗、`_formatTime` 用时、计分明细串 `(击杀分 <b>N</b> + 波次分 <b>N</b>) × 难度 <b>×m</b>[ × 硬核 <b>×1.5</b>] = 总分 <b>N</b> · 队友击杀 N（按 60% 计入）`、队伍存活时长榜（按 `member.aliveTime` 久→短）。失败文案用 `deathWave`（只在 `finish(false)` 赋值）并保留击杀分。
+- **本轮修掉的一个真实 bug**：`_fillResult()` 在 `!giant`（练习模式）早退，而队伍存活榜的可见性处理写在早退**之后**，导致练习局结算面板残留上一局的榜单。已把 `result-squad-board` 的 `hidden` 与列表清空提到早退之前（`js/ui.js:549` 附近）。这是 `practiceZero` 断言逼出来的，不是测试问题。
+- **单文件打包法（替代 M5 的 replace 拼接）**：`DEAD-SIGNAL-单文件版.html` 内联 67 万字符的 three.min.js 单行，任何 `replace(str, content)` 字符串形式都会把内容里的 `$&` 当捕获模式展开，实测会注入 `</body>` 砸烂解析。改为**行数组定位 + 倒序 splice**：以 `  <script>` / `  </script>` 独立行定位 11 组块（第 1 组是 three，永不改写），后 10 组按 index.html head 顺序对应 `waves/world/audio/player/effects/enemies/squad/weapons/ui/game.js`，另加 `<style>`（← `styles.css`）与 DOM 段（`<body>` 起、到第一个 `<script>` 止，因为单文件版把脚本搬到了 body 尾部）。写完后重新读回自校验：块数、three 块 FNV hash 逐字节不变、每块以源文件首尾行匹配、`</body>` 唯一。同步完成后再跑一次是 NOOP（幂等）。
+- **测试环境已从 CDP 换到内部浏览器**（本轮指示）：`tests/browser.cjs` + `:9223` 专用 Chrome 那条路弃用（`.chrome-dbg/` 空转，可删）。页内通路是 `http://127.0.0.1:8080/…?v=<bust>` → 注入 `__load(file, global)`（`fetch('/tests/<file>.cjs', { cache: 'no-store' })`，用 `new Function('require', …)` 重建 HELPERS/CASES，`require` 必须是**返回 fake 的函数**而不是 fake 本身）+ `__go(file, global, names)` 顺序跑 case 写 `window.__P`，再用独立 evaluate 轮询读数（MCP 单次调用 15s 超时，长 case 必须 `setTimeout` 后台启动）。**页面 reload 会销毁 harness，要重新注入**；注入脚本必须整段发送，截断会被权限分类器拦下。
+- **节奏（M6 复核结论 + 2026-10-15 定稿）**：30 波对不上原 60–75 分钟目标——normal 难度全 30 波共 **945 只 / 总血量 121,100**，投放窗口 499s、间奏 29×15=435s；步枪 257 DPS 打满 7.9 分钟，55% 有效 DPS 约 14.3 分钟，加上间奏也只有 ~22 分钟（悲观真人 25% 效率估到 30–45 分钟）。这是设计目标与 §5/§6 已定稿兵力/血量表之间的冲突，不是实现缺陷。**你的拍板：数值表与间奏都不动，目标口径改成"普通难度 30–45 分钟"**，所以本节只留测量结论、不留待办。当时列过的备选（若日后要拉长再回来选，均已否决）：① `intermission 15→30s` + 拉开投放间隔；② `DIFFICULTY.normal.hp 1→1.6` 或 21 波后分段加成；③ 延长到 40 波。注意 `resolveStats` 的血量是 `round(def.hp × diff.hp)`，改倍率会覆盖全 30 波并被 `difficultyTuning` 18 条立刻抓到取整不一致。
+- **留给后续（若有 M7/真机测试）**：真 GPU + 可见窗口的 60fps 复测（本门限是软渲染后台窗口的保守值）；真人 30 波计时，用来验证"30–45 分钟"这个新口径。`tmp-m6.cjs` 里 `perfLodAB` 的三轮 A/B 在慢机上单次要跑 3–5 分钟，若进 CI 需要拆成 draw-stat 与 timing 两条。
 
 ## 里程碑外的备忘
 

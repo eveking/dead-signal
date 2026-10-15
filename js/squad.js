@@ -13,8 +13,10 @@
       armor: 0x2e6f6a, cloth: 0x24463f, accent: 0x9fb8ab,
       magazine: 24, reserve: 120, reloadTime: 2.3, fireInterval: 0.7, damage: 10, range: 18,
       melee: { damage: 26, cooldown: 1.4, reach: 2.2 } },
+    // 狙击手守高台：车顶岗位到两侧通道的射击线要 12m 以上才不被自家车皮压住，
+    // 所以只放宽"发现目标"的半径（20m），追击半径仍按通用 10m，且从不因此下楼（见 behave 的同层判定）。
     { key: 'ranger', name: '游骑兵', weapon: '狙击', hp: 90, speed: 3.4, order: 'hold', threatFirst: true,
-      armor: 0x4a6491, cloth: 0x31465e, accent: 0x8fd0ff,
+      armor: 0x4a6491, cloth: 0x31465e, accent: 0x8fd0ff, holdRadius: 20,
       magazine: 8, reserve: 40, reloadTime: 2.6, fireInterval: 1.35, damage: 26, range: 38 }
   ];
 
@@ -112,6 +114,7 @@
         hp: def.hp, maxHp: def.hp, dead: false, respawn: 0, stagger: 0,
         order: def.order, pendingOrder: null, orderClock: 0,
         ammo: def.magazine, reserve: def.reserve, reload: 0, fireCd: 0, meleeCd: 0,
+        aliveTime: 0,
         target: null, targetClock: 0, goal: new T.Vector3().copy(start),
         flash: 0, age: Math.random() * 10, phase: index * 1.7, moving: false, radius: 0.42
       };
@@ -158,6 +161,8 @@
           if (m.respawn <= 0) this.respawn(m);
           continue;
         }
+        // 结算面板"队伍存活时长榜"（§9）：只在存活期间累计。
+        m.aliveTime += dt;
         m.fireCd = Math.max(0, m.fireCd - dt);
         m.meleeCd = Math.max(0, m.meleeCd - dt);
         if (m.reload > 0) {
@@ -208,6 +213,9 @@
           const gl = Math.hypot(gx, gz) || 1;
           m.goal.set(post.x + gx / gl * (LEASH - 1), 0, post.z + gz / gl * (LEASH - 1));
         }
+        // 高台岗位不因追击下楼：守点者留在自己的层，狙击手原位开火（§4 死守岗位）。
+        const gy = game.world.floorAt(m.goal.x, m.goal.z, post.y);
+        if (Math.abs(gy - post.y) > 0.42) m.goal.copy(post);
         return;
       }
       if (m.order === 'follow') {
@@ -237,7 +245,7 @@
       const mp = m.root.position;
       let radius, anchor;
       if (downed) { radius = 22; anchor = mp; }
-      else if (m.order === 'hold') { anchor = game.world.squadPosts[m.index]; radius = LEASH; }
+      else if (m.order === 'hold') { anchor = game.world.squadPosts[m.index]; radius = m.def.holdRadius || LEASH; }
       else if (m.order === 'follow') { anchor = player.position; radius = 20; }
       else { anchor = mp; radius = 30; }
       let best = null, bestScore = Infinity;
@@ -275,7 +283,8 @@
       const dx = m.goal.x - p.x, dz = m.goal.z - p.z;
       const d = Math.hypot(dx, dz);
       // 目标点只存 XZ，支撑高度按当前地图顶面现算，岗位在中央平台（0.35m）上也不会贴地。
-      m.goal.y = world.floorAt(m.goal.x, m.goal.z);
+      // 用队友自己的脚底选层：站在桥下就是地面，不会被头顶的桥面抬到 3.6m。
+      m.goal.y = world.floorAt(m.goal.x, m.goal.z, p.y);
       if (d > 0.45) {
         // 友方走 navAlly：斜坡与车顶对队友开放，怪物仍被地面层挡在高台之外。
         const fieldId = 'g' + m.index;
@@ -377,6 +386,8 @@
       const player = game.player.position;
       for (let i = drops.length - 1; i >= 0; --i) {
         const drop = drops[i];
+        // M5 特殊武器箱只归玩家（§4"队友不捡特殊武器"）。
+        if (drop.weapon) continue;
         const dp = drop.root.position;
         const d = Math.hypot(dp.x - m.root.position.x, dp.z - m.root.position.z);
         // 玩家够得着的补给让玩家先拿，避免嘴下抢食。
@@ -391,6 +402,25 @@
         }
         game.audio.pickup();
         game.effects.removeDrop(i);
+      }
+      // 波间补给箱队友也吃（§4 自动拾取脚下补给）：血 +35 / 备弹 +90，需同层且不跟玩家抢。
+      const supplies = game.effects.supplies;
+      for (let i = supplies.length - 1; i >= 0; --i) {
+        const supply = supplies[i];
+        const dp = supply.root.position;
+        const d = Math.hypot(dp.x - m.root.position.x, dp.z - m.root.position.z);
+        if (d > 1.1 || Math.hypot(dp.x - player.x, dp.z - player.z) < 2.2) continue;
+        if (Math.abs(m.root.position.y - supply.base) > 1.2) continue;
+        if (supply.kind === 'health') {
+          if (m.hp >= m.maxHp) continue;
+          m.hp = Math.min(m.maxHp, m.hp + 35);
+        } else {
+          if (m.reserve >= m.def.reserve) continue;
+          m.reserve = Math.min(m.def.reserve, m.reserve + 90);
+          if (m.ammo === 0 && m.reload === 0) this.startReload(m);
+        }
+        game.audio.pickup();
+        game.effects.removeSupply(i);
       }
     }
 
