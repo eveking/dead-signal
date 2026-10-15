@@ -331,16 +331,16 @@ const CASES = {
     const rifle = w.items[0];
     M.ok('M-56 面板 DPS ≈ 步枪×1.6', Math.abs((43 / 0.105) / (rifle.damage / rifle.interval) - 1.6) < 0.03,
       `${(43 / 0.105).toFixed(0)} vs ${(rifle.damage / rifle.interval).toFixed(0)}`);
-    // 手枪快照：弹药原样冻结
-    w.items[1].ammo = 5; w.items[1].reserve = 40;
+    // 狙击快照：弹药原样冻结（武器五槽改造后特殊武器替换 5 号狙击槽）
+    w.items[4].ammo = 5; w.items[4].reserve = 30;
     w.grantSpecial('gatling');
-    M.ok('手枪槽被替换、步枪永远保留', w.current.type === 'gatling' && w.index === 1 &&
+    M.ok('狙击槽被替换、步枪永远保留', w.current.type === 'gatling' && w.index === 4 &&
       w.items[0].type === 'rifle' && w.special.kind === 'gatling');
-    M.ok('拾取时快照手枪弹药', w.special.pistol.ammo === 5 && w.special.pistol.reserve === 40);
-    M.ok('持特殊枪时补给记到快照（addAmmo 路由）', (() => {
-      w.addAmmo(0, 36);
-      return w.special.pistol.reserve === 76 && w.current.type === 'gatling';
-    })(), w.special.pistol.reserve);
+    M.ok('拾取时快照狙击弹药', w.special.sniper.ammo === 5 && w.special.sniper.reserve === 30);
+    M.ok('持特殊枪时补给记到快照并封顶 40（addAmmo 路由）', (() => {
+      w.addAmmo(0, 0, 36);
+      return w.special.sniper.reserve === 40 && w.current.type === 'gatling';
+    })(), w.special.sniper.reserve);
     M.ok('加特林持续弹 30s 起表', Math.abs(w.specialTimer - 30) < 0.01 && w.current.reserve === 0);
 
     // 移速 -40%：同走廊对比步枪
@@ -356,12 +356,12 @@ const CASES = {
     w.switchTo(0);
     const dRifle = runMetered();
     w.grantSpecial('gatling');
-    w.switchTo(1);
+    w.switchTo(4);
     const dGat = runMetered();
     M.ok('加特林移速 ×0.6（实测比值≈0.6）', dGat / dRifle > 0.5 && dGat / dRifle < 0.7,
       `${dRifle.toFixed(2)}m -> ${dGat.toFixed(2)}m`);
     M.ok('heavy 口对步枪为 false、对加特林为 true', (() => {
-      w.switchTo(0); const a = w.heavy; w.switchTo(1); return a === false && w.heavy === true;
+      w.switchTo(0); const a = w.heavy; w.switchTo(4); return a === false && w.heavy === true;
     })());
     // 禁跳 / 切回解除
     p.jumpQueued = true;
@@ -381,7 +381,7 @@ const CASES = {
     M.step(300);
     M.ok('切走不计消耗（暂停走表）', w.specialTimer > 24.8 && w.specialTimer < 25.2, w.specialTimer.toFixed(2));
     // HUD 口径
-    w.switchTo(1);
+    w.switchTo(4);
     w.specialTimer = 25;
     g.ui.update(0);
     const ui = g.ui.el;
@@ -389,7 +389,7 @@ const CASES = {
       ui['reserve-value'].textContent === '∞', `${ui['ammo-value'].textContent}/${ui['reserve-value'].textContent}`);
     M.ok('HUD 武器名切到 M-56', ui['weapon-name'].textContent.includes('M-56'), ui['weapon-name'].textContent);
     // 实射验证：弹匣在扣、伤害在掉
-    w.switchTo(1);
+    w.switchTo(4);
     const ty = M.spawn('tyrant', M.at(M.spot.p, M.spot.dir, 9));
     ty.maxHp = ty.hp = 1200;
     M.look(M.spot.dir);
@@ -400,12 +400,12 @@ const CASES = {
     M.ok('加特林连射：弹药在扣、暴君掉血', w.current.ammo < ammo0 && ty.hp < hp0 - 43 * 2,
       `${ammo0}->${w.current.ammo} / ${hp0}->${ty.hp}`);
     M.ok('暴君步枪减伤不挡加特林（每发满 43）', hp0 - ty.hp >= 43 * 3, hp0 - ty.hp);
-    // 打空自动换回手枪 + 快照带回
+    // 打空自动换回狙击 + 快照带回（含期间补给，封顶 40）
     w.specialTimer = 0.5;
     M.step(60);
-    M.ok('30s 走完后换回 P-12', w.current.type === 'pistol' && w.special === null && w.specialTimer === 0);
-    M.ok('换回后弹药取快照（含期间补给）', w.items[1].ammo === 5 && w.items[1].reserve === 76,
-      `${w.items[1].ammo}/${w.items[1].reserve}`);
+    M.ok('30s 走完后换回 M-21', w.current.type === 'sniper' && w.special === null && w.specialTimer === 0);
+    M.ok('换回后弹药取快照（含期间补给）', w.items[4].ammo === 5 && w.items[4].reserve === 40,
+      `${w.items[4].ammo}/${w.items[4].reserve}`);
 
     // 倒地掉落 → 原地可重捡
     w.grantSpecial('gatling');
@@ -416,7 +416,7 @@ const CASES = {
     const lost = g.effects.drops.find(d => d.weapon);
     M.ok('倒地时特殊武器掉在身旁', lost && lost.type === 'gatling' &&
       Math.hypot(lost.root.position.x - p.position.x, lost.root.position.z - p.position.z) < 0.5);
-    M.ok('倒地后手枪槽已还原', w.current.type === 'pistol' && w.special === null);
+    M.ok('倒地后狙击槽已还原', w.current.type === 'sniper' && w.special === null);
     p.downed = false; p.health = 100; g.ui.showDowned(false);
     M.standAt(lost.root.position);
     M.step(2);
@@ -436,9 +436,9 @@ const CASES = {
     g.ui.update(0);
     M.ok('HUD 火箭筒标"单发"', g.ui.el['weapon-mode'].textContent === '单发', g.ui.el['weapon-mode'].textContent);
     // 先测"持加特林时再拾火箭"直接替换、快照仍是手枪
-    M.ok('换持新特殊枪时手枪快照不变', (() => {
+    M.ok('换持新特殊枪时狙击快照不变', (() => {
       w.grantSpecial('gatling'); w.grantSpecial('rocket');
-      return w.current.type === 'rocket' && w.special.kind === 'rocket' && w.special.pistol.type === 'pistol';
+      return w.current.type === 'rocket' && w.special.kind === 'rocket' && w.special.sniper.type === 'sniper';
     })());
 
     const base = new THREE.Vector3(M.spot.p.x, 0, M.spot.p.z);
@@ -476,11 +476,11 @@ const CASES = {
     M.ok('3.2s 后 1 发复装、备弹 3→2', w.current.ammo === 1 && w.current.reserve === 2,
       `${w.current.ammo}/${w.current.reserve}`);
     // 耗尽路径：备弹 0 再打空 → 换回手枪
-    w.items[1].reserve = 0;
+    w.current.reserve = 0;
     M.step(20);
     w.shoot();
     M.step(4);
-    M.ok('弹鼓与备弹全空自动换回 P-12', w.current.type === 'pistol' && w.special === null);
+    M.ok('弹鼓与备弹全空自动换回 M-21', w.current.type === 'sniper' && w.special === null);
     // 泰坦满 450（无减伤）
     w.grantSpecial('rocket');
     const titan = M.spawn('titan', M.at(M.spot.p, M.spot.dir, 9), 15);

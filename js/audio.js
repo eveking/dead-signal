@@ -174,6 +174,22 @@
         this._play({ noise: true, duration: 0.17, volume: 0.27,
           filter: 'bandpass', filterHz: 2800, filterTo: 650, q: 0.8 });
         this._play({ from: 155, to: 38, duration: 0.23, volume: 0.32 });
+      } else if (type === 'sniper') {
+        // M-21：更长更沉的大口径爆音 + 高频尾啸。
+        this._play({ noise: true, duration: 0.3, volume: 0.4,
+          filter: 'lowpass', filterHz: 5600, filterTo: 420 });
+        this._play({ type: 'sawtooth', from: 132, to: 32, duration: 0.34,
+          volume: 0.24, filter: 'lowpass', filterHz: 1500, filterTo: 140 });
+        this._play({ type: 'triangle', from: 2400, to: 1100, delay: 0.05, duration: 0.16, volume: 0.06 });
+      } else if (type === 'grenade') {
+        // 投掷破空：上扬带通噪声。
+        this._play({ noise: true, duration: 0.16, volume: 0.14,
+          filter: 'bandpass', filterHz: 1400, filterTo: 3400, q: 0.7 });
+      } else if (type === 'knife') {
+        // 挥砍：短促金属破风 + 上扬哨音。
+        this._play({ noise: true, duration: 0.12, volume: 0.16,
+          filter: 'bandpass', filterHz: 3600, filterTo: 900, q: 1.1 });
+        this._play({ type: 'triangle', from: 850, to: 2300, duration: 0.09, volume: 0.05 });
       }
     }
 

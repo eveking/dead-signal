@@ -61,6 +61,12 @@
 @media(max-width:700px){.squad-panel{left:15px;top:auto;bottom:118px;transform:scale(.85);transform-origin:bottom left}}
 
 /* M3 · 雾散体黑雾：玩家身处雾中的视野遮挡（规则层，表现留给 M6 优化） */
+/* 狙击开镜镜筒：全屏遮罩留中央视窗 + 细十字线（#scope，hidden 属性控制显隐）。 */
+.scope{position:absolute;inset:0;z-index:7;pointer-events:none;background:radial-gradient(circle 17vmin at 50% 50%,rgba(0,0,0,0) 98%,rgba(3,6,4,.97) 100%)}
+.scope::before{content:'';position:absolute;left:50%;top:50%;width:34vmin;height:34vmin;transform:translate(-50%,-50%);border:1.5px solid rgba(198,240,150,.55);border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.85),inset 0 0 46px rgba(0,0,0,.4)}
+.scope i{position:absolute;left:50%;top:50%;background:rgba(222,250,182,.72)}
+.scope .v{width:1.5px;height:9vmin;transform:translate(-50%,-50%)}
+.scope .h{height:1.5px;width:9vmin;transform:translate(-50%,-50%)}
 .fog-veil{position:absolute;inset:0;pointer-events:none;z-index:6;background:radial-gradient(ellipse at center,rgba(5,8,7,.34) 0%,rgba(3,6,5,.94) 76%);opacity:0;transition:opacity .12s}
 /* M5 BOSS 血条：泰坦/巨型泰坦登场时显示在波次展示下方，狂暴态转红 */
 .boss-bar{position:absolute;top:112px;left:50%;transform:translateX(-50%);width:380px;display:flex;align-items:center;gap:11px;background:#0e1a16ba;border:1px solid #afca9433;padding:7px 13px;backdrop-filter:blur(5px)}

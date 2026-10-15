@@ -40,7 +40,7 @@
         <div class="mission-strip">
           <div><span class="mission-number">01</span><span>战斗区域<small>废弃工业基地</small></span></div>
           <div><span class="mission-number" id="mission-waves">05</span><span>敌人波次<small>渐进式生存挑战</small></span></div>
-          <div><span class="mission-number">02</span><span>武器配置<small>步枪 / 战术手枪</small></span></div>
+          <div><span class="mission-number">02</span><span>武器配置<small>步枪 / 手枪 / 手雷 / 军刀 / 狙击</small></span></div>
         </div>
         <div id="load-setup" class="load-setup">
           <div class="setup-row"><span class="setup-label">作战模式</span><div class="seg" id="setup-mode" role="radiogroup" aria-label="作战模式">
@@ -72,7 +72,8 @@
         <div class="control-item"><kbd class="wide-key">SPACE</kbd><span>跳跃<small>JUMP</small></span></div>
         <div class="control-item"><kbd class="wide-key">SHIFT</kbd><span>疾跑<small>SPRINT</small></span></div>
         <div class="control-item"><kbd>R</kbd><span>换弹<small>RELOAD</small></span></div>
-        <div class="control-item"><span class="inline-keys"><kbd>1</kbd><kbd>2</kbd></span><span>切换武器<small>SWITCH</small></span></div>
+        <div class="control-item"><span class="inline-keys"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd></span><span>切换武器<small>SWITCH</small></span></div>
+        <div class="control-item"><kbd class="wide-key">RMB</kbd><span>狙击开镜<small>ADS</small></span></div>
         <button id="sound-btn" class="sound-button" title="切换音效" aria-pressed="false">◖)) <span>音效开启</span></button>
       </div>
       <footer class="menu-footer"><span>一座孤城。五波感染者。一次活下去的机会。</span><span>WEBGL EXPERIENCE <i></i> 推荐使用耳机</span></footer>
@@ -87,6 +88,7 @@
       <div id="squad-panel" class="squad-panel" hidden><span class="hud-caption">SQUAD · TAB 选中 / Q 指令</span><div id="squad-rows"></div></div>
       <div id="killfeed" class="killfeed"></div>
       <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="scope" class="scope" hidden><i class="v"></i><i class="h"></i></div>
       <div id="hitmarker" class="hitmarker">×</div>
       <div id="damage-numbers" class="damage-numbers"></div>
       <div id="wave-banner" class="wave-banner" hidden><small id="banner-eyebrow">INCOMING TRANSMISSION</small><strong id="banner-title">第一波</strong><span id="banner-subtitle">守住防线</span></div>
@@ -96,7 +98,7 @@
       <div id="reload-indicator" class="reload-indicator" hidden><span>装填中</span><div><i id="reload-progress"></i></div></div>
       <div class="health-panel"><div class="health-icon">+</div><div><span class="hud-caption">VITAL SIGNS</span><div class="health-value"><strong id="health-value">100</strong><span>/ 100</span></div><div class="health-bar"><i id="health-fill"></i></div></div></div>
       <div id="coins-panel" class="coins-panel" hidden><span class="coins-icon">◉</span><div><span class="hud-caption">REVIVE COINS</span><strong id="coins-value">30</strong></div></div>
-      <div class="hud-bottom-center"><span><kbd>1</kbd> 步枪</span><span><kbd>2</kbd> 手枪</span><span><kbd>P</kbd> 暂停</span></div>
+      <div class="hud-bottom-center"><span><kbd>1</kbd> 步枪</span><span><kbd>2</kbd> 手枪</span><span><kbd>3</kbd> 手雷</span><span><kbd>4</kbd> 军刀</span><span><kbd>5</kbd> 狙击</span><span><kbd>P</kbd> 暂停</span></div>
       <div class="ammo-panel"><div class="weapon-name"><span id="weapon-name">AR-7 突击步枪</span><span id="weapon-mode">AUTO</span></div><div class="ammo-value"><strong id="ammo-value">30</strong><span>/ <b id="reserve-value">180</b></span></div><div class="ammo-bottom"><span id="weapon-slots">01 — PRIMARY</span><span><kbd>R</kbd> 换弹</span></div></div>
       <div class="fps" id="fps">60 FPS</div>
     </section>
@@ -104,7 +106,7 @@
     <div id="damage-overlay" class="damage-overlay"></div>
     <div id="fog-veil" class="fog-veil" hidden></div>
     <section id="pause" class="modal-overlay" hidden>
-      <div class="modal-panel"><span class="modal-eyebrow">CONNECTION ON HOLD</span><h2>行动暂停<span>TAKE A BREATH.</span></h2><p id="pause-message">战场正在等待。准备好后，继续守住防线。</p><button id="resume-btn" class="primary-button"><span>继续战斗</span><span>↗</span></button><button id="restart-pause-btn" class="secondary-button">重新开始任务</button><div class="modal-controls">WASD 移动 · 鼠标瞄准 · 左键射击<br>空格跳跃 · Shift 疾跑 · R 换弹 · 1 / 2 切枪<br>E 复活币归队（濒死时） · F 传送归队（重生窗口内）</div></div>
+      <div class="modal-panel"><span class="modal-eyebrow">CONNECTION ON HOLD</span><h2>行动暂停<span>TAKE A BREATH.</span></h2><p id="pause-message">战场正在等待。准备好后，继续守住防线。</p><button id="resume-btn" class="primary-button"><span>继续战斗</span><span>↗</span></button><button id="restart-pause-btn" class="secondary-button">重新开始任务</button><div class="modal-controls">WASD 移动 · 鼠标瞄准 · 左键射击<br>空格跳跃 · Shift 疾跑 · R 换弹 · 1–5 切枪 · 右键（狙击开镜）<br>E 复活币归队（濒死时） · F 传送归队（重生窗口内）</div></div>
     </section>
     <section id="result" class="modal-overlay" hidden>
       <div class="modal-panel result-panel"><span class="modal-eyebrow" id="result-eyebrow">MISSION COMPLETE</span><h2 id="result-title">防线已守住<span>YOU MADE IT.</span></h2><p id="result-description">信号重新接通。隔离区暂时安全了。</p><div class="result-stats"><div><small>最终得分</small><strong id="result-score">0</strong></div><div><small>历史最佳</small><strong id="result-best">—</strong><em id="result-record" class="result-record" hidden>新纪录！</em></div><div><small>到达波次</small><strong id="result-wave">5 / 5</strong></div><div><small>击杀 / 爆头击杀</small><strong id="result-kills">0 / 0</strong></div></div><div class="result-stats result-extra"><div><small>爆头率</small><strong id="result-headshot">0%</strong></div><div id="result-coins-cell"><small>复活币消耗</small><strong id="result-coins">0</strong></div><div><small>用时</small><strong id="result-time">00:00</strong></div></div><div class="result-breakdown" id="result-breakdown" hidden><span id="result-breakdown-text"></span><div class="result-squad-board" id="result-squad-board" hidden><small>队伍存活时长</small><ol id="result-squad-list"></ol></div></div><button id="restart-btn" class="primary-button"><span>再次执行任务</span><span>↗</span></button><button id="menu-btn" class="secondary-button">返回指挥中心</button></div>

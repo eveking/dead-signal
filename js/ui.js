@@ -37,7 +37,7 @@
         'result-breakdown-text result-squad-board result-squad-list result-best result-record ' +
         'menu-best menu-best-score menu-best-meta ' +
         'downed downed-ring downed-count downed-hint rally rally-count coins-panel coins-value ' +
-        'squad-panel squad-rows fog-veil boss-bar boss-name boss-fill boss-value';
+        'squad-panel squad-rows fog-veil boss-bar boss-name boss-fill boss-value scope';
       ids.split(' ').forEach((id) => { this.el[id] = document.getElementById(id); });
 
       this.healthPanel = this.el['health-value'].closest('.health-panel');
@@ -466,7 +466,7 @@
       var weapons = game.weapons || {};
       var current = weapons.current || {};
       var health = clamp(number(player.health, 100), 0, 100);
-      var index = weapons.index === 1 ? 1 : 0;
+      var index = Math.min(4, Math.max(0, count(weapons.index)));
       var total = this._totalWaves(game);
       var wave = clamp(count(game.wave), 0, total);
       var completed = clamp(count(game.completedWaves), 0, total);
@@ -513,21 +513,28 @@
       this._text('radar-count', enemies ? '检测到 ' + alive + ' 个敌对信号' : '区域扫描中');
       this._text('weapon-name', current.name || (index === 0 ? 'AR-7 突击步枪' : '战术手枪'));
       var automatic = typeof current.automatic === 'boolean' ? current.automatic : index === 0;
-      // M5 特殊武器：加特林弹药位显示剩余秒数、备弹 ∞；火箭筒标"单发"。
-      var gatling = current.type === 'gatling';
-      var ammo = gatling ? Math.max(0, Math.ceil(number(weapons.specialTimer, 0))) : count(number(current.ammo, 30));
+      // M5 特殊武器 + 五槽：加特林弹药位显示剩余秒数、备弹 ∞；火箭筒标"单发"；军刀 ∞/近战；手雷按持数/上限。
+      var gunType = current.type;
+      var gatling = gunType === 'gatling';
+      var knife = gunType === 'knife';
+      var grenade = gunType === 'grenade';
+      var ammo = gatling ? Math.max(0, Math.ceil(number(weapons.specialTimer, 0))) :
+        knife ? '∞' : count(number(current.ammo, 30));
       var reserve = count(number(current.reserve, 180));
-      this._text('weapon-mode', current.type === 'rocket' ? '单发' : automatic ? 'AUTO' : 'SEMI');
-      this._text('weapon-slots', index === 0 ? '01 — PRIMARY' : '02 — SECONDARY');
+      this._text('weapon-mode', gunType === 'rocket' ? '单发' : knife ? 'MELEE' :
+        grenade ? '投掷' : gunType === 'sniper' ? 'BOLT' : automatic ? 'AUTO' : 'SEMI');
+      this._text('weapon-slots', (window.DZ.SLOT_LABELS || [])[index] || '');
       this._text('ammo-value', ammo);
-      this._text('reserve-value', gatling ? '∞' : reserve);
+      this._text('reserve-value', gatling ? '∞' : knife ? '—' : grenade ? String(count(number(current.capacity, 6))) : reserve);
       var ammoLabel = gatling ? '持续弹剩余 ' + ammo + ' 秒，备弹不限' :
+        knife ? '军刀无耐久 · 普通感染者一挥必杀，泰坦/巨型泰坦 150，暴君 60' :
+        grenade ? '持握手雷 ' + ammo + ' / ' + count(number(current.capacity, 6)) + ' · 弹药箱与补给箱各 +1' :
         '弹匣 ' + ammo + ' / ' + count(number(current.capacity, 30)) + '，备用弹药 ' + reserve;
       if (this._ammoLabel !== ammoLabel) { this._ammoLabel = ammoLabel; this.el['ammo-value'].setAttribute('aria-label', ammoLabel); }
-      this.ammoPanel.classList.toggle('empty', ammo === 0);
+      this.ammoPanel.classList.toggle('empty', typeof ammo === 'number' && ammo === 0);
       if (this._weaponIndex !== index) {
         this._weaponIndex = index;
-        for (var i = 0; i < Math.min(2, this.weaponHints.length); i++) {
+        for (var i = 0; i < Math.min(5, this.weaponHints.length); i++) {
           this.weaponHints[i].style.color = i === index ? 'var(--lime)' : '';
           if (i === index) this.weaponHints[i].setAttribute('aria-current', 'true');
           else this.weaponHints[i].removeAttribute('aria-current');
@@ -535,6 +542,13 @@
       }
       var spread = clamp(7 + Math.max(0, number(weapons.spread, 0)) * 180, 7, 40) + 'px';
       if (this._spread !== spread) { this._spread = spread; this.el.crosshair.style.setProperty('--spread', spread); }
+      // 狙击开镜：隐藏准星与枪模（枪模由 weapons.update 收起），显示镜筒 overlay。
+      var scoping = Boolean(player.scoping);
+      if (this._scoping !== scoping) {
+        this._scoping = scoping;
+        this.el.crosshair.hidden = scoping;
+        if (this.el.scope) this.el.scope.hidden = !scoping;
+      }
       var reloadRemaining = Math.max(0, number(weapons.reloadRemaining, 0));
       var reloadDuration = Math.max(0, number(weapons.reloadDuration, 0));
       var reloadProgress = reloadRemaining > 0 && reloadDuration > 0 ?

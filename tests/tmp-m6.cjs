@@ -659,7 +659,7 @@ const CASES = {
     M.boot(13, {});
     // 加特林 30s 续航 vs 泰坦 6000 血
     g.weapons.grantSpecial('gatling');
-    const gat = g.weapons.items[1];
+    const gat = g.weapons.items[4];
     const shots = Math.floor(gat.sustained / gat.interval);
     M.ok('加特林 30 秒 285 发 · 12255 理论伤（单挑泰坦够，需留出走位与雾内损耗）',
       gat.damage === 43 && gat.interval === 0.105 && gat.sustained === 30 &&
@@ -669,7 +669,7 @@ const CASES = {
       shots * gat.damage < T.megaTitan.hp, `${shots * gat.damage} < ${T.megaTitan.hp}`);
     // 火箭 4 发对 BOSS 节奏
     g.weapons.grantSpecial('rocket');
-    const rkt = g.weapons.items[1];
+    const rkt = g.weapons.items[4];
     M.ok('火箭 4 发 ×450=1800：泰坦需 14 发、巨型泰坦需 34 发（只当破阵手段）',
       rkt.explosive.damage === 450 && rkt.explosive.radius === 2.5 && rkt.ammo + rkt.reserve === 4 &&
       rkt.explosive.damage * 4 === 1800 && Math.ceil(T.titan.hp / 450) === 14 &&

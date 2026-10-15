@@ -56,6 +56,13 @@
       this.blows = [];
       this.blowRing = new T.RingGeometry(0.86, 1, 32);
       this.warns = [];
+      // 武器五槽改造：手雷抛物线投射物（引信 1.1 秒）与军刀挥砍弧光。
+      this.grenades = [];
+      this.grenadeLimit = 12;
+      this.grenadeGeo = new T.SphereGeometry(0.09, 8, 6);
+      this.grenadeMat = new T.MeshStandardMaterial({ color: 0x39442f, roughness: 0.55, metalness: 0.35 });
+      this.slashes = [];
+      this.slashGeo = new T.RingGeometry(0.42, 1.15, 24, 1, -0.62, 1.24);
     }
 
     // 只有巨人城模式在箱体上浮字显示剩余寿命；练习模式外观零变化（菜单换模式后 waveMode 会变，取实时值）。
@@ -252,6 +259,41 @@
       trace.line.material.opacity = 0.65;
     }
 
+    // 手雷投掷：引信 1.1 秒、重力 16、落地反弹衰减，到时在当前位置起爆（半径 5 / 中心 350，BOSS 减半走 enemies.damage）。
+    throwGrenade(origin, velocity) {
+      if (this.grenades.length >= this.grenadeLimit) this.removeGrenade(0);
+      const mesh = new T.Mesh(this.grenadeGeo, this.grenadeMat);
+      mesh.position.copy(origin);
+      this.game.world.scene.add(mesh);
+      this.grenades.push({ mesh, velocity: velocity.clone(), life: 1.1 });
+    }
+
+    removeGrenade(index) {
+      const grenade = this.grenades[index];
+      this.game.world.scene.remove(grenade.mesh);
+      this.grenades.splice(index, 1);
+    }
+
+    // 军刀挥砍：贴枪口前方的扇形弧光，0.16 秒淡出。
+    slash(camera) {
+      if (this.slashes.length >= 6) this.removeSlash(0);
+      const mesh = new T.Mesh(this.slashGeo, new T.MeshBasicMaterial({ color: 0xd7ecc2, transparent: true, opacity: 0.85, side: T.DoubleSide, blending: T.AdditiveBlending, depthWrite: false }));
+      mesh.quaternion.copy(camera.quaternion);
+      const forward = new T.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      mesh.position.copy(camera.position).addScaledVector(forward, 1.15);
+      mesh.position.y -= 0.18;
+      mesh.scale.setScalar(1.6);
+      this.game.world.scene.add(mesh);
+      this.slashes.push({ mesh, life: 0.16, maxLife: 0.16 });
+    }
+
+    removeSlash(index) {
+      const slash = this.slashes[index];
+      this.game.world.scene.remove(slash.mesh);
+      slash.mesh.material.dispose();
+      this.slashes.splice(index, 1);
+    }
+
     // type: 'health' | 'ammo' | 'rocket' | 'gatling'；options.life 缺省读模式 dropLife（巨人城 20s、练习 35s）。
     drop(position, type, options = {}) {
       if (this.drops.length >= 12) this.removeDrop(0);
@@ -394,6 +436,35 @@
         const t = 1 - warn.life / warn.maxLife;
         warn.material.opacity = 0.2 + t * 0.3 + Math.sin(this.time * 16) * 0.05;
       }
+      for (let i = this.grenades.length - 1; i >= 0; --i) {
+        const grenade = this.grenades[i];
+        grenade.life -= dt;
+        if (grenade.life <= 0) {
+          const p = grenade.mesh.position.clone();
+          this.removeGrenade(i);
+          this.game.enemies.explode(p, 5, 350, 'grenade');
+          continue;
+        }
+        grenade.velocity.y -= 16 * dt;
+        grenade.mesh.position.addScaledVector(grenade.velocity, dt);
+        grenade.mesh.rotation.x += dt * 8;
+        grenade.mesh.rotation.z += dt * 4.5;
+        const floor = this.game.world.floorAt(grenade.mesh.position.x, grenade.mesh.position.z, grenade.mesh.position.y) + 0.09;
+        if (grenade.mesh.position.y < floor) {
+          grenade.mesh.position.y = floor;
+          grenade.velocity.y *= -0.32;
+          grenade.velocity.x *= 0.62;
+          grenade.velocity.z *= 0.62;
+        }
+      }
+      for (let i = this.slashes.length - 1; i >= 0; --i) {
+        const slash = this.slashes[i];
+        slash.life -= dt;
+        if (slash.life <= 0) { this.removeSlash(i); continue; }
+        const t = 1 - slash.life / slash.maxLife;
+        slash.mesh.scale.setScalar(1.6 + t * 0.7);
+        slash.mesh.material.opacity = 0.85 * (1 - t);
+      }
       const player = this.game.player;
       for (let i = this.drops.length - 1; i >= 0; --i) {
         const drop = this.drops[i];
@@ -417,7 +488,7 @@
         }
         if (drop.type === 'health' && player.health === 100) continue;
         if (drop.type === 'health') { player.heal(30); this.game.ui.toast('医疗补给 · 生命值 +30'); }
-        else { this.game.weapons.addAmmo(60, 24); this.game.ui.toast('弹药补给 · 步枪 +60 / 手枪 +24'); }
+        else { this.game.weapons.addAmmo(60, 24, 10, 1); this.game.ui.toast('弹药补给 · 步枪 +60 / 手枪 +24 / 狙击 +10 / 手雷 +1'); }
         this.game.audio.pickup();
         this.removeDrop(i);
       }
@@ -435,8 +506,8 @@
           player.heal(35);
           this.game.ui.toast('医疗箱 · 生命值 +35');
         } else {
-          this.game.weapons.addAmmo(90, 36);
-          this.game.ui.toast('弹药箱 · 步枪 +90 / 手枪 +36');
+          this.game.weapons.addAmmo(90, 36, 15, 1);
+          this.game.ui.toast('弹药箱 · 步枪 +90 / 手枪 +36 / 狙击 +15 / 手雷 +1');
         }
         this.game.audio.pickup();
         this.removeSupply(i);
@@ -449,6 +520,8 @@
       while (this.fogs.length) this.removeFog(0);
       while (this.blows.length) this.removeBlow(0);
       while (this.warns.length) this.removeWarn(0);
+      while (this.grenades.length) this.removeGrenade(0);
+      while (this.slashes.length) this.removeSlash(0);
       for (const p of this.particles) p.life = 0;
       for (const t of this.traces) { t.life = 0; t.line.visible = false; }
       for (let i = 0; i < this.particles.length; i++) {

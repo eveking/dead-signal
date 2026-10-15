@@ -10,7 +10,7 @@
       this.position = new T.Vector3();
       this.keys = new Set();
       this.reset();
-      const controlKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyR', 'Digit1', 'Digit2', 'KeyP', 'KeyE', 'KeyF', 'Tab', 'KeyQ'];
+      const controlKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyR', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'KeyP', 'KeyE', 'KeyF', 'Tab', 'KeyQ'];
       document.addEventListener('keydown', event => {
         if (game.state !== 'playing') return;
         if (controlKeys.includes(event.code)) event.preventDefault();
@@ -20,6 +20,9 @@
         if (event.code === 'KeyR') game.weapons.reload();
         if (event.code === 'Digit1') game.weapons.switchTo(0);
         if (event.code === 'Digit2') game.weapons.switchTo(1);
+        if (event.code === 'Digit3') game.weapons.switchTo(2);
+        if (event.code === 'Digit4') game.weapons.switchTo(3);
+        if (event.code === 'Digit5') game.weapons.switchTo(4);
         if (event.code === 'KeyP') game.pause();
         if (event.code === 'KeyE') this.tryRevive();
         if (event.code === 'KeyF') this.tryRally();
@@ -27,16 +30,22 @@
       document.addEventListener('keyup', event => this.keys.delete(event.code));
       document.addEventListener('mousemove', event => {
         if (game.state !== 'playing' || document.pointerLockElement !== game.world.renderer.domElement) return;
-        this.yaw -= event.movementX * 0.00185;
-        this.pitch = T.MathUtils.clamp(this.pitch - event.movementY * 0.00185, -1.48, 1.48);
+        // 开镜灵敏度 ×0.38（约 4 倍镜的手感换算）。
+        const s = this.scoping ? 0.0007 : 0.00185;
+        this.yaw -= event.movementX * s;
+        this.pitch = T.MathUtils.clamp(this.pitch - event.movementY * s, -1.48, 1.48);
       });
       document.addEventListener('mousedown', event => {
-        if (event.button !== 0 || game.state !== 'playing' || this.downed) return;
+        if (game.state !== 'playing' || this.downed) return;
         if (document.pointerLockElement !== game.world.renderer.domElement) return;
-        this.shooting = true;
-        this.fireQueued = true;
+        if (event.button === 0) { this.shooting = true; this.fireQueued = true; }
+        // 狙击右键按住开镜：仅 M-21 且未装填时生效。
+        if (event.button === 2 && game.weapons.current.type === 'sniper' && game.weapons.reloadRemaining === 0) this.scoping = true;
       });
-      document.addEventListener('mouseup', event => { if (event.button === 0) this.shooting = false; });
+      document.addEventListener('mouseup', event => {
+        if (event.button === 0) this.shooting = false;
+        if (event.button === 2) this.scoping = false;
+      });
       game.world.renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
     }
 
@@ -58,6 +67,7 @@
       this.downed = false;
       this.downedRemaining = 0;
       this.rallyWindow = 0;
+      this.scoping = false;
       this.clearInput();
     }
 
@@ -79,10 +89,12 @@
       // 硬直（裂魂者击退 / BOSS 震波）：0.5 秒内失去移动与跳跃，仍可转视角。
       if (this.stagger > 0) { x = 0; z = 0; this.jumpQueued = false; }
       this.moving = x !== 0 || z !== 0;
-      this.sprinting = this.moving && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && !this.shooting;
+      this.sprinting = this.moving && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && !this.shooting && !this.scoping;
       // M5 加特林减益（§8）：持枪期间走/跑同乘 ×0.6，禁止跳跃；切回步枪即解除。
+      // 武器五槽改造：持刀 +15% 移速；狙击开镜 ×0.55 且禁跑/禁跳。
       const heavy = this.game.weapons.heavy;
-      const speed = (this.sprinting ? 7.3 : 4.5) * (heavy ? 0.6 : 1);
+      const speed = (this.sprinting ? 7.3 : 4.5) * (heavy ? 0.6 : 1) *
+        (this.game.weapons.knifeBoost ? 1.15 : 1) * (this.scoping ? 0.55 : 1);
       const length = Math.hypot(x, z) || 1;
       x = x / length * speed * dt;
       z = z / length * speed * dt;
@@ -90,7 +102,7 @@
       this.game.world.move(this.position, x * cos + z * sin, -x * sin + z * cos, 0.38);
       // 脚底支撑面：平地/中央平台/车顶/斜坡都用同一个高度，落地判定不再写死 y=0。
       const floor = this.game.world.floorAt(this.position.x, this.position.z, this.position.y);
-      if (this.jumpQueued && this.grounded && !heavy) {
+      if (this.jumpQueued && this.grounded && !heavy && !this.scoping) {
         this.velocityY = 6.2;
         this.grounded = false;
       }
@@ -114,7 +126,7 @@
       camera.position.copy(this.position);
       camera.position.y += (this.downed ? 0.52 : 1.68) + bob;
       camera.rotation.set(T.MathUtils.clamp(this.pitch + this.kick, -1.5, 1.5), this.yaw, this.downed ? 0.28 : 0, 'YXZ');
-      camera.fov = dt ? T.MathUtils.lerp(camera.fov, this.sprinting ? 81 : 75, 1 - Math.exp(-8 * dt)) : 75;
+      camera.fov = dt ? T.MathUtils.lerp(camera.fov, this.scoping ? 16 : this.sprinting ? 81 : 75, 1 - Math.exp(-8 * dt)) : 75;
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld(true);
     }
@@ -162,6 +174,7 @@
       if (!config || !game.allowRevive) { game.finish(false); return; }
       if (game.coins <= 0) { game.finish(false); return; }
       this.downed = true;
+      this.scoping = false;
       this.downedRemaining = config.castTime;
       this.rallyWindow = 0;
       this.clearInput();

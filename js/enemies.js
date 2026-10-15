@@ -782,6 +782,8 @@
       if (enemy.def && enemy.def.rifleResist && weapon === 'rifle' && !headshot) {
         amount *= 1 - enemy.def.rifleResist;
       }
+      // 手雷对 BOSS 伤害减半（武器五槽改造 ④）。
+      if (weapon === 'grenade' && enemy.boss) amount *= 0.5;
       enemy.hp = Math.max(0, enemy.hp - amount);
       enemy.flash = 0.13;
       enemy.knock.copy(direction).setY(0).normalize().multiplyScalar(headshot ? 3.7 : 2.5);

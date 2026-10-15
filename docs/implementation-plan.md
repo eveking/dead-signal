@@ -17,6 +17,7 @@
 | M5 | 补给点位 + 特殊武器 + BOSS 血条 ✅ 2026-10-15 | 3 pd | M3, M4 |
 | M6 | 调平、性能、结算与打包 ✅ 2026-10-15 | 3 pd | M5 |
 | M7 | 表现层欠债（BOSS 独立骨架）+ 最佳纪录 + 真机收尾 ✅ 2026-10-15 | 追加 4 pd，不计入 27 pd | M6 |
+| W | 武器五槽改造（3 手雷 / 4 军刀 / 5 狙击；特殊武器改占狙击槽）✅ 2026-10-15 | 追加，不计入排期 | M7 |
 
 合计 ≈ 27 pd（M7 追加 4 pd 后共 31 pd）。串行做约 5–6 周；若 M4 提前并行可压缩到 4 周左右。
 
@@ -279,6 +280,53 @@ M4b 高层玩法与战场规则（2 pd）：
 - **回归（开发页与单文件页双份，全绿）**：tmp-m3a 139 / tmp-m3b 67 / tmp-m4b 82 / tmp-m5 **95**（排期备忘写的 96 是笔误，两套页面实测断言数都是 95）/ tmp-m6 117；C 步最佳纪录 7 条断言（落盘字段、结算显示、低分不破、高分刷新、practice 独立 key、菜单显示、切模式换纪录）双页全过。控制台无游戏侧 error。
 - **打包**：`DEAD-SIGNAL-单文件版.html` 用行块 splice 法重打（three 块 FNV hash 不变、10 个 JS 块 + style + DOM 段逐块 MATCH、`</body>` 唯一、二次跑幂等 NOOP）。
 - **仍遗留（不阻塞）**：M6 备忘里的"真 GPU + 可见窗口 60fps 复测"与"真人 30 波计时验证 30–45 分钟口径"两项需要真人真机，本轮未覆盖。
+
+## W · 武器五槽改造（追加，不计入排期）— 已完成 2026-10-15
+
+对应决策（2026-10-15 拍板）：1 步枪、2 手枪不变；3 手雷、4 军刀、5 狙击枪。① 手雷初始 4 / 上限 6；② 开镜要移速惩罚；③ 狙击要开镜；④ 手雷对 BOSS 减半；⑤ 双模式都吃五槽；⑥⑦ 按推荐（军刀弧内小怪必杀、特殊武器改占 5 号狙击槽）。
+
+### 槽位与输入（js/weapons.js / js/player.js）
+
+- 五槽顺序固定 `rifle,pistol,grenade,knife,sniper`，数字键 1–5 直切（`Digit1–5` → `switchTo(0–4)`），复用 0.22s 切枪硬直。`DZ.SLOT_LABELS` 提供 HUD 槽位文案。
+- 开镜（判断点）：`mousedown` 按钮 2 且 `current.type==='sniper'` 且非装填/非濒死/pointer-lock 才置 `player.scoping`；`mouseup`/`switchTo`/`reset`/`goDowned` 全部清零。开镜效果集中在两处：`syncCamera` FOV `16`（对照 sprint 81 / 常态 75），mousemove 灵敏度 `0.0007`（常态 0.00185）；移速乘子 `(scoping ? 0.55 : 1)` 且禁疾跑禁跳。
+- 持刀增益：`get knifeBoost()`（current 为 knife 且无特殊武器），player 移速公式乘 `1.15`；加特林 `heavy ×0.6` 逻辑不变。
+
+### 手雷（3）
+
+- 投掷链：`shoot()` 对手雷走 `throwGrenade()`（抛物线初速 `dir*13 + up 4.4`、间隔 0.9s、空投只给 0.25s 硬直 + toast，不落武器）。`effects.grenades` 池上限 12，重力 16、落地 `floorAt+0.09` 反弹（vy×-0.32/水平×0.62）、引信 1.1s 到点 `enemies.explode(p, 5, 350, 'grenade')`。
+- 经济（判断点）：**波间不自动补**——game.js 的 `addAmmo(60, 24)` 老式两参调用刻意不给手雷；只有弹药箱 `+1`（未满时）。数值复核：对无 BOSS 目标中心 350、半径 5m。
+- 对 BOSS 减半（④）：`enemies.damage()` 内 `weapon==='grenade' && enemy.boss → amount*=0.5`，放在暴君步枪减伤之后、爆头倍率与狙击必杀之外互不影响。
+
+### 军刀（4）
+
+- 弧线斩：`melee()` 判定 `dot(归一化 xz 方向) >= cos(arc)`，arc=1.0 即 ±57.3°（不是 ±arc/2，曾按半角写导致 40° 目标被判不出圈）。射程 2.6m、间隔 0.55s；普通小怪直接 `hp+1` 必杀，泰坦/巨型泰坦 150、暴君 60（按 `e.type==='tyrant'`，`e.def.type` 不存在）。
+- 挥砍表现 `effects.slash`（RingGeometry 圈 1.6→2.3 缩放淡出）；HUD 弹药位显示 `∞`。
+
+### 狙击 M-21（5）
+
+- 面板：弹体 250 / 间隔 1.3s / 弹匣 5 / 备弹 25 / 装填 2.6s；爆头规则（判断点，shoot() 内）：`sniper && headshot && !enemy.boss → enemy.hp+1` 一击必杀，BOSS 保留 ×2 头倍率（=500），躯干恒 250。开镜时散布 `accuracy + movingSpread + spread*0.05`（腰射 ×0.12）。
+- 备弹上限 40：所有入弹走 `addAmmo(…, sniper, …)` 统一 `Math.min(40, …)`。
+
+### 特殊武器改占 5 号槽（⑦）
+
+- M5 的加特林/火箭筒不再替换手枪槽：`grantSpecial/stowSpecial` 快照对象由 `special.pistol` 迁移为 `special.sniper`（items[4] 整槽冻结、补给路由到快照），文案 "替换狙击槽"/"换回 M-21"，耗尽提示同步（'M-56 弹链打空 · 换回 M-21'）。手枪从此永久安全。
+- `addAmmo(rifle, pistol, sniper, grenade)` 四参（NaN 防护：`sniper && sniperSlot.reserve != null`，兼容 game.js:319 两参老调用）。
+
+### HUD 与表现（js/ui.js / index.html / styles.css / js/audio.js）
+
+- `weapon-mode` 按型分支：单发(火箭)/MELEE/投掷/BOLT(狙击)/AUTO(加特林)/SEMI；`weapon-slots` 取 `DZ.SLOT_LABELS[index]`；空仓红字只对 `typeof ammo==='number'` 生效（军刀不亮）。开镜 overlay `#scope`（径向渐变镜筒 + .v/.h 十字线），`ui.update` 里与 `crosshair.hidden` 互斥切换（依赖全局 `[hidden]{display:none!important}`）。三把新枪各有 buildModel 视图模型与 muzzleOffsets 条目；audio.shot 增加 sniper/grenade/knife 分支。帮助页/暂停页文案改 1–5 与 RMB 开镜。
+
+### 测试与回归
+
+- 新增 `tests/tmp-w.cjs`（4 case / 53 断言：slotsHud/grenadeKit/knifeKit/sniperKit）。页内定步长驱动，沿用 browser-sim-stepping 约定。
+- **测试侧教训（写死在 helper 里）**：① `aimAt` 的 pitch 必须 `atan2(v.y - eye, horiz)`——本代码库 `rotation.x` 正值抬头，符号写反时打 4.3m 高的泰坦头会把弹道按到地面（伤害 0）；② 瞄头前必须 `player.kick = 0`，上一发狙击后坐 0.05 就足以把 12–14m 的头判定盒整个抬掉（实测 kick 0.045 全脱靶）；③ 走廊上方有箱顶栈道拦高弹道，BOSS 爆头用 `aimClear` 逐级拉近找净空射击线；④ `runMetered` 测速前清场（活体暴君/泰坦的击退会把开镜 2.475m 打断成 1.39m）。
+- tmp-m5 快照断言改为狙击槽语义 + 封顶 40 口径（`w.addAmmo(0,0,36)` 记到 `special.sniper`，40 封顶）。
+- 全量回归（开发页 + 单文件页双份全绿）：tmp-w 53 / tmp-m5 96（supplyCycle 医疗/弹药分支导致 95–96 浮动，非回归）/ tmp-m6 117 / tmp-m3a 139 / tmp-m3b 67 / tmp-m4b 82；控制台仅 three r160 弃用警告。
+- **旧套件在页内 harness 的接缝**：m3a/m3b 的 case 不自带 boot，须先 `__M3.boot('giant')`（m3a）或逐 case `setup(15)`（m3b）/按原 node runner 参数表 `setup(wave, opts)`（m4b），否则 resolveStats 走 dataDriven=false 回退 walker、`M.spot` 为空。
+
+### 打包
+
+- `DEAD-SIGNAL-单文件版.html` 行块 splice 重打：本次 12 段中 8 段替换（style/DOM/audio/player/effects/enemies/weapons/ui），three 块 FNV `40840b5` 不变、`</body>` 唯一、二次运行 12/12 MATCH（幂等），总行数 5754。打包脚本为一次性 `tests/tmp-pack.cjs`，跑完即删。
 
 ## 里程碑外的备忘
 
