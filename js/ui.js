@@ -512,24 +512,23 @@
       this._text('remaining-value', enemies ? '剩余 ' + remaining + ' 名感染者' : '等待敌人');
       this._text('radar-count', enemies ? '检测到 ' + alive + ' 个敌对信号' : '区域扫描中');
       this._text('weapon-name', current.name || (index === 0 ? 'AR-7 突击步枪' : '战术手枪'));
-      var automatic = typeof current.automatic === 'boolean' ? current.automatic : index === 0;
-      // M5 特殊武器 + 五槽：加特林弹药位显示剩余秒数、备弹 ∞；火箭筒标"单发"；军刀 ∞/近战；手雷按持数/上限。
-      var gunType = current.type;
-      var gatling = gunType === 'gatling';
-      var knife = gunType === 'knife';
-      var grenade = gunType === 'grenade';
-      var ammo = gatling ? Math.max(0, Math.ceil(number(weapons.specialTimer, 0))) :
-        knife ? '∞' : count(number(current.ammo, 30));
+      // 呈现读武器定义字段：mode 是档位文案，ammoStyle 决定弹药位/备弹位/aria 说明的画法。
+      // 新增武器只要复用这四种 style 之一就不必改这里；开局前 current 为空对象，故保留兜底。
+      var style = current.ammoStyle || 'magazine';
+      var ammo = style === 'timer' ? Math.max(0, Math.ceil(number(weapons.specialTimer, 0))) :
+        style === 'infinity' ? '∞' : count(number(current.ammo, 30));
       var reserve = count(number(current.reserve, 180));
-      this._text('weapon-mode', gunType === 'rocket' ? '单发' : knife ? 'MELEE' :
-        grenade ? '投掷' : gunType === 'sniper' ? 'BOLT' : automatic ? 'AUTO' : 'SEMI');
+      var capacity = count(number(current.capacity, style === 'held' ? 6 : 30));
+      this._text('weapon-mode', current.mode || (index === 0 ? 'AUTO' : 'SEMI'));
       this._text('weapon-slots', (window.DZ.SLOT_LABELS || [])[index] || '');
       this._text('ammo-value', ammo);
-      this._text('reserve-value', gatling ? '∞' : knife ? '—' : grenade ? String(count(number(current.capacity, 6))) : reserve);
-      var ammoLabel = gatling ? '持续弹剩余 ' + ammo + ' 秒，备弹不限' :
-        knife ? '军刀无耐久 · 普通感染者一挥必杀，泰坦/巨型泰坦 150，暴君 60' :
-        grenade ? '持握手雷 ' + ammo + ' / ' + count(number(current.capacity, 6)) + ' · 弹药箱与补给箱各 +1' :
-        '弹匣 ' + ammo + ' / ' + count(number(current.capacity, 30)) + '，备用弹药 ' + reserve;
+      this._text('reserve-value', style === 'timer' ? '∞' : style === 'infinity' ? '—' :
+        style === 'held' ? capacity : reserve);
+      var ammoLabel = style === 'timer' ? '持续弹剩余 ' + ammo + ' 秒，备弹不限' :
+        style === 'infinity' ? '军刀无耐久 · 普通感染者一挥必杀，泰坦/巨型泰坦 ' +
+          count(number(current.bossDamage, 150)) + '，暴君 ' + count(number(current.tyrantDamage, 60)) :
+        style === 'held' ? '持握手雷 ' + ammo + ' / ' + capacity + ' · 弹药箱与补给箱各 +1' :
+        '弹匣 ' + ammo + ' / ' + capacity + '，备用弹药 ' + reserve;
       if (this._ammoLabel !== ammoLabel) { this._ammoLabel = ammoLabel; this.el['ammo-value'].setAttribute('aria-label', ammoLabel); }
       this.ammoPanel.classList.toggle('empty', typeof ammo === 'number' && ammo === 0);
       if (this._weaponIndex !== index) {

@@ -288,8 +288,9 @@ M4b 高层玩法与战场规则（2 pd）：
 ### 槽位与输入（js/weapons.js / js/player.js）
 
 - 五槽顺序固定 `rifle,pistol,grenade,knife,sniper`，数字键 1–5 直切（`Digit1–5` → `switchTo(0–4)`），复用 0.22s 切枪硬直。`DZ.SLOT_LABELS` 提供 HUD 槽位文案。
-- 开镜（判断点）：`mousedown` 按钮 2 且 `current.type==='sniper'` 且非装填/非濒死/pointer-lock 才置 `player.scoping`；`mouseup`/`switchTo`/`reset`/`goDowned` 全部清零。开镜效果集中在两处：`syncCamera` FOV `16`（对照 sprint 81 / 常态 75），mousemove 灵敏度 `0.0007`（常态 0.00185）；移速乘子 `(scoping ? 0.55 : 1)` 且禁疾跑禁跳。
-- 持刀增益：`get knifeBoost()`（current 为 knife 且无特殊武器），player 移速公式乘 `1.15`；加特林 `heavy ×0.6` 逻辑不变。
+- 开镜（判断点）：`mousedown` 按钮 2 且 `weapons.canScope`（= 武器定义 `scopes` 为真且不处于装填）才置 `player.scoping`；`mouseup`/`switchTo`/`reset`/`goDowned` 全部清零。开镜效果集中在两处：`syncCamera` FOV `16`（对照 sprint 81 / 常态 75），mousemove 灵敏度 `0.0007`（常态 0.00185）；移速乘子 `(scoping ? 0.55 : 1)` 且禁疾跑禁跳。
+- 持刀增益：`get speedMul()` 读武器定义字段（knife 为 `1.15`，其余 `1`），player 移速公式直接相乘；加特林 `heavy ×0.6` 逻辑不变。
+- 武器定义收敛（2026-10-16）：七把枪的静态数据集中在 `js/weapons.js` 顶部的 `WEAPONS` 注册表并导出 `DZ.WEAPONS`，行为与呈现都靠字段表达——`fire`（hitscan/melee/throw）、`scopes`/`heavy`/`speedMul`、`headshotInstakill`、`dryMsg`/`sustained`/`pickupToast`、`viewX`/`spreadStep`、`mode`/`ammoStyle`、`sound`（音效配方，audio 直接播）。HUD、音效、移速、开镜四处不再按 `type` 字符串分支。
 
 ### 手雷（3）
 
@@ -314,7 +315,7 @@ M4b 高层玩法与战场规则（2 pd）：
 
 ### HUD 与表现（js/ui.js / index.html / styles.css / js/audio.js）
 
-- `weapon-mode` 按型分支：单发(火箭)/MELEE/投掷/BOLT(狙击)/AUTO(加特林)/SEMI；`weapon-slots` 取 `DZ.SLOT_LABELS[index]`；空仓红字只对 `typeof ammo==='number'` 生效（军刀不亮）。开镜 overlay `#scope`（径向渐变镜筒 + .v/.h 十字线），`ui.update` 里与 `crosshair.hidden` 互斥切换（依赖全局 `[hidden]{display:none!important}`）。三把新枪各有 buildModel 视图模型与 muzzleOffsets 条目；audio.shot 增加 sniper/grenade/knife 分支。帮助页/暂停页文案改 1–5 与 RMB 开镜。
+- `weapon-mode` 读武器定义 `mode`（单发/MELEE/投掷/BOLT/AUTO/SEMI），弹药位与备弹位与 aria 说明按 `ammoStyle`（magazine/held/infinity/timer）四种画法分支；`weapon-slots` 取 `DZ.SLOT_LABELS[index]`；空仓红字只对 `typeof ammo==='number'` 生效（军刀不亮）。开镜 overlay `#scope`（径向渐变镜筒 + .v/.h 十字线），`ui.update` 里与 `crosshair.hidden` 互斥切换（依赖全局 `[hidden]{display:none!important}`）。三把新枪各有 buildModel 视图模型与 muzzleOffsets 条目；七把枪的开火音统一为 `DZ.WEAPONS[type].sound` 层数组，由 `audio.shot()` 播放（2026-10-16 补齐此前缺音的火箭筒与加特林）。帮助页/暂停页文案改 1–5 与 RMB 开镜。
 
 ### 测试与回归
 

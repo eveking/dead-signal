@@ -361,9 +361,9 @@ const CASES = {
     const dKnife = M.runMetered();
     M.ok('持刀移速 ×1.15（实测比值≈1.15）', dKnife / dRifle > 1.1 && dKnife / dRifle < 1.2,
       `${dRifle.toFixed(2)}m -> ${dKnife.toFixed(2)}m = ${(dKnife / dRifle).toFixed(3)}`);
-    M.ok('knifeBoost 口只对军刀为 true', w.knifeBoost === true);
+    M.ok('speedMul 口对军刀为 1.15', w.speedMul === 1.15);
     w.switchTo(0);
-    M.ok('切回步枪立刻失效', w.knifeBoost === false);
+    M.ok('切回步枪立刻回落 1', w.speedMul === 1);
     g.effects.reset();
   },
 

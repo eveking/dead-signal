@@ -39,8 +39,8 @@
         if (game.state !== 'playing' || this.downed) return;
         if (document.pointerLockElement !== game.world.renderer.domElement) return;
         if (event.button === 0) { this.shooting = true; this.fireQueued = true; }
-        // 狙击右键按住开镜：仅 M-21 且未装填时生效。
-        if (event.button === 2 && game.weapons.current.type === 'sniper' && game.weapons.reloadRemaining === 0) this.scoping = true;
+        // 狙击右键按住开镜：由武器定义的 scopes 决定哪把枪能开镜，装填中不允许。
+        if (event.button === 2 && game.weapons.canScope) this.scoping = true;
       });
       document.addEventListener('mouseup', event => {
         if (event.button === 0) this.shooting = false;
@@ -91,10 +91,10 @@
       this.moving = x !== 0 || z !== 0;
       this.sprinting = this.moving && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && !this.shooting && !this.scoping;
       // M5 加特林减益（§8）：持枪期间走/跑同乘 ×0.6，禁止跳跃；切回步枪即解除。
-      // 武器五槽改造：持刀 +15% 移速；狙击开镜 ×0.55 且禁跑/禁跳。
+      // 武器五槽改造：持刀 +15% 移速（speedMul 由武器定义给出）；狙击开镜 ×0.55 且禁跑/禁跳。
       const heavy = this.game.weapons.heavy;
       const speed = (this.sprinting ? 7.3 : 4.5) * (heavy ? 0.6 : 1) *
-        (this.game.weapons.knifeBoost ? 1.15 : 1) * (this.scoping ? 0.55 : 1);
+        this.game.weapons.speedMul * (this.scoping ? 0.55 : 1);
       const length = Math.hypot(x, z) || 1;
       x = x / length * speed * dt;
       z = z / length * speed * dt;

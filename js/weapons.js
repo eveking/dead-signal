@@ -4,13 +4,97 @@
   if (!window.THREE) return;
   const T = THREE;
 
-  // M5 特殊武器（§8）：拾取替换狙击槽（5 号），耗尽/放弃后换回拾取时快照的狙击枪。
-  const SPECIALS = {
-    rocket: { type: 'rocket', model: 'rocket', name: 'R-80 火箭筒', damage: 450, capacity: 1, ammo: 1, reserve: 3, interval: 0.3, reloadTime: 3.2, recoil: 0.05, accuracy: 0.002, automatic: false, explosive: { radius: 2.5, damage: 450 } },
-    gatling: { type: 'gatling', model: 'gatling', name: 'M-56 加特林', damage: 43, capacity: 9999, ammo: 9999, reserve: 0, interval: 0.105, reloadTime: 1.25, recoil: 0.02, accuracy: 0.006, automatic: true, sustained: 30 }
+  // 武器注册表：一把枪的全部静态定义 —— 数值、开火方式、跨模块标志、HUD 呈现、音效配方。
+  // 消费侧（weapons / player / audio / ui）只读字段，不再按 type 字符串分支；新增武器只需加一个条目。
+  // fire: 'hitscan' | 'melee' | 'throw'；ammoStyle: 'magazine' | 'held' | 'infinity' | 'timer'。
+  // 缺 reloadTime 即无弹匣概念（换弹键无效）；special 武器替换 5 号狙击槽并快照原枪。
+  // sound 是 audio.shot() 直接播放的层数组；七把枪都要带，否则该枪开火无声（2026-10-16 才补齐火箭筒/加特林）。
+  const WEAPONS = {
+    rifle: {
+      type: 'rifle', model: 'rifle', name: 'AR-7 突击步枪',
+      damage: 27, capacity: 30, ammo: 30, reserve: 180, interval: 0.105, reloadTime: 1.9,
+      recoil: 0.014, accuracy: 0.004, automatic: true,
+      fire: 'hitscan', spreadStep: 0.018, viewX: 0.26, mode: 'AUTO', ammoStyle: 'magazine',
+      sound: [
+        { noise: true, duration: 0.105, volume: 0.32, filter: 'lowpass', filterHz: 6500, filterTo: 1000 },
+        { type: 'sawtooth', from: 185, to: 48, duration: 0.11, volume: 0.17, filter: 'lowpass', filterHz: 1800, filterTo: 180 }
+      ]
+    },
+    pistol: {
+      type: 'pistol', model: 'pistol', name: 'P-12 战术手枪',
+      damage: 44, capacity: 12, ammo: 12, reserve: 72, interval: 0.28, reloadTime: 1.25,
+      recoil: 0.03, accuracy: 0.002, automatic: false,
+      fire: 'hitscan', spreadStep: 0.032, viewX: 0.22, mode: 'SEMI', ammoStyle: 'magazine',
+      sound: [
+        { noise: true, duration: 0.17, volume: 0.27, filter: 'bandpass', filterHz: 2800, filterTo: 650, q: 0.8 },
+        { from: 155, to: 38, duration: 0.23, volume: 0.32 }
+      ]
+    },
+    grenade: {
+      type: 'grenade', model: 'grenade', name: 'M-40 破片手雷',
+      damage: 350, capacity: 6, ammo: 4, interval: 0.9, explosive: { radius: 5, damage: 350 },
+      fire: 'throw', viewX: 0.18, mode: '投掷', ammoStyle: 'held',
+      sound: [
+        // 投掷破空：上扬带通噪声。
+        { noise: true, duration: 0.16, volume: 0.14, filter: 'bandpass', filterHz: 1400, filterTo: 3400, q: 0.7 }
+      ]
+    },
+    knife: {
+      type: 'knife', model: 'knife', name: 'M-9 军刀',
+      damage: 0, interval: 0.55, reach: 2.6, arc: 1.0, bossDamage: 150, tyrantDamage: 60,
+      fire: 'melee', speedMul: 1.15, viewX: 0.2, mode: 'MELEE', ammoStyle: 'infinity',
+      sound: [
+        // 挥砍：短促金属破风 + 上扬哨音。
+        { noise: true, duration: 0.12, volume: 0.16, filter: 'bandpass', filterHz: 3600, filterTo: 900, q: 1.1 },
+        { type: 'triangle', from: 850, to: 2300, duration: 0.09, volume: 0.05 }
+      ]
+    },
+    sniper: {
+      type: 'sniper', model: 'sniper', name: 'M-21 狙击步枪',
+      damage: 250, capacity: 5, ammo: 5, reserve: 25, interval: 1.3, reloadTime: 2.6,
+      recoil: 0.05, accuracy: 0.0008, automatic: false,
+      fire: 'hitscan', scopes: true, headshotInstakill: true, spreadStep: 0.032,
+      viewX: 0.24, mode: 'BOLT', ammoStyle: 'magazine',
+      sound: [
+        // M-21：更长更沉的大口径爆音 + 高频尾啸。
+        { noise: true, duration: 0.3, volume: 0.4, filter: 'lowpass', filterHz: 5600, filterTo: 420 },
+        { type: 'sawtooth', from: 132, to: 32, duration: 0.34, volume: 0.24, filter: 'lowpass', filterHz: 1500, filterTo: 140 },
+        { type: 'triangle', from: 2400, to: 1100, delay: 0.05, duration: 0.16, volume: 0.06 }
+      ]
+    },
+    rocket: {
+      type: 'rocket', model: 'rocket', name: 'R-80 火箭筒', special: true,
+      damage: 450, capacity: 1, ammo: 1, reserve: 3, interval: 0.3, reloadTime: 3.2,
+      recoil: 0.05, accuracy: 0.002, automatic: false, explosive: { radius: 2.5, damage: 450 },
+      fire: 'hitscan', spreadStep: 0.032, viewX: 0.19, mode: '单发', ammoStyle: 'magazine',
+      dryMsg: 'R-80 弹药耗尽 · 换回 M-21',
+      pickupToast: '获得 R-80 火箭筒 · 替换狙击槽（4 发 · 装填 3.2 秒）',
+      sound: [
+        // R-80：沉底大爆音 + 后焰上扬嘶声 + 低频冲击，比 M-21 更宽但不更响（峰值靠三层叠加）。
+        { noise: true, duration: 0.32, volume: 0.36, filter: 'lowpass', filterHz: 1200, filterTo: 260 },
+        { noise: true, delay: 0.04, duration: 0.5, volume: 0.14, filter: 'bandpass', filterHz: 600, filterTo: 3000, q: 0.5 },
+        { type: 'sawtooth', from: 110, to: 24, duration: 0.4, volume: 0.22, filter: 'lowpass', filterHz: 1400, filterTo: 120 }
+      ]
+    },
+    gatling: {
+      type: 'gatling', model: 'gatling', name: 'M-56 加特林', special: true,
+      damage: 43, capacity: 9999, ammo: 9999, reserve: 0, interval: 0.105, reloadTime: 1.25,
+      recoil: 0.02, accuracy: 0.006, automatic: true, sustained: 30,
+      fire: 'hitscan', heavy: true, spreadStep: 0.018, viewX: 0.15, mode: 'AUTO', ammoStyle: 'timer',
+      dryMsg: 'M-56 弹链打空 · 换回 M-21',
+      pickupToast: '获得 M-56 加特林 · 30 秒持续弹 · 移速 -40% · 无法跳跃',
+      sound: [
+        // M-56：比步枪单发更闷更短（0.105 秒一封弹，叠两层已够密），避免连发糊成噪声墙。
+        { noise: true, duration: 0.1, volume: 0.3, filter: 'lowpass', filterHz: 5200, filterTo: 800 },
+        { type: 'sawtooth', from: 165, to: 42, duration: 0.12, volume: 0.14, filter: 'lowpass', filterHz: 1500, filterTo: 200 }
+      ]
+    }
   };
+  DZ.WEAPONS = WEAPONS;
 
-  // 武器五槽改造（2026-10-15）：3 手雷（消耗品，弹药箱 +1）、4 军刀（近战+移速）、5 狙击（右键开镜）。
+  // 玩家随身五槽（顺序即 1..5）；特殊武器运行时替换 4 号下标（5 槽位）。
+  const SLOTS = ['rifle', 'pistol', 'grenade', 'knife', 'sniper'];
+
   DZ.SLOT_LABELS = ['01 — PRIMARY', '02 — SECONDARY', '03 — THROWN', '04 — MELEE', '05 — MARKSMAN'];
 
   DZ.Weapons = class Weapons {
@@ -22,15 +106,8 @@
       this.muzzlePosition = new T.Vector3();
       this.view = new T.Group();
       game.world.camera.add(this.view);
-      this.models = {
-        rifle: this.buildModel('rifle'),
-        pistol: this.buildModel('pistol'),
-        rocket: this.buildModel('rocket'),
-        gatling: this.buildModel('gatling'),
-        grenade: this.buildModel('grenade'),
-        knife: this.buildModel('knife'),
-        sniper: this.buildModel('sniper')
-      };
+      this.models = {};
+      for (const def of Object.values(WEAPONS)) this.models[def.model] = this.buildModel(def.model);
       for (const model of Object.values(this.models)) this.view.add(model);
       this.reset();
       this.view.visible = false;
@@ -38,18 +115,13 @@
 
     get current() { return this.items[this.index]; }
     get currentModel() { return this.models[this.current.model]; }
-    // 加特林持枪减益（移速 -40%、禁跳）由 player.js 读取这一个口；持刀 +15% 移速读 knifeBoost。
-    get heavy() { return this.current.type === 'gatling'; }
-    get knifeBoost() { return this.current.type === 'knife'; }
+    // 持枪减益/增益由定义字段给出，player.js 只读这三个口：heavy（移速 -40%、禁跳）、speedMul（持刀 +15%）、canScope（狙击右键）。
+    get heavy() { return Boolean(this.current.heavy); }
+    get speedMul() { return this.current.speedMul || 1; }
+    get canScope() { return Boolean(this.current.scopes) && this.reloadRemaining === 0; }
 
     reset() {
-      this.items = [
-        { type: 'rifle', model: 'rifle', name: 'AR-7 突击步枪', damage: 27, capacity: 30, ammo: 30, reserve: 180, interval: 0.105, reloadTime: 1.9, recoil: 0.014, accuracy: 0.004, automatic: true },
-        { type: 'pistol', model: 'pistol', name: 'P-12 战术手枪', damage: 44, capacity: 12, ammo: 12, reserve: 72, interval: 0.28, reloadTime: 1.25, recoil: 0.03, accuracy: 0.002, automatic: false },
-        { type: 'grenade', model: 'grenade', name: 'M-40 破片手雷', damage: 350, capacity: 6, ammo: 4, interval: 0.9, explosive: { radius: 5, damage: 350 } },
-        { type: 'knife', model: 'knife', name: 'M-9 军刀', damage: 0, interval: 0.55, reach: 2.6, arc: 1.0, bossDamage: 150, tyrantDamage: 60 },
-        { type: 'sniper', model: 'sniper', name: 'M-21 狙击步枪', damage: 250, capacity: 5, ammo: 5, reserve: 25, interval: 1.3, reloadTime: 2.6, recoil: 0.05, accuracy: 0.0008, automatic: false }
-      ];
+      this.items = SLOTS.map(type => Object.assign({}, WEAPONS[type]));
       this.special = null;
       this.specialTimer = 0;
       this.index = 0;
@@ -227,8 +299,8 @@
 
     // M5 拾取（五槽版）：替换狙击槽并快照当前狙击枪（耗尽/换回时弹药原样带回）；持枪中再拾新箱直接替换。
     grantSpecial(kind) {
-      const def = SPECIALS[kind];
-      if (!def) return false;
+      const def = WEAPONS[kind];
+      if (!def || !def.special) return false;
       if (!this.special) this.special = { kind, sniper: Object.assign({}, this.items[4]) };
       else this.special.kind = kind;
       this.items[4] = Object.assign({}, def);
@@ -242,9 +314,7 @@
       this.cooldown = Math.max(this.cooldown, 0.22);
       this.game.player.fireQueued = false;
       this.applyVisibility();
-      this.game.ui.toast(kind === 'rocket' ?
-        '获得 R-80 火箭筒 · 替换狙击槽（4 发 · 装填 3.2 秒）' :
-        '获得 M-56 加特林 · 30 秒持续弹 · 移速 -40% · 无法跳跃', 3);
+      this.game.ui.toast(def.pickupToast, 3);
       return true;
     }
 
@@ -276,11 +346,11 @@
 
     reload() {
       const gun = this.current;
-      // 手雷/军刀无弹匣概念，换弹键无效。
-      if (gun.type === 'grenade' || gun.type === 'knife') return;
+      // 无弹匣概念的武器（手雷/军刀）定义里没有 reloadTime，换弹键无效。
+      if (gun.reloadTime == null) return;
       if (this.reloadRemaining > 0 || gun.ammo === gun.capacity || this.game.state !== 'playing') return;
       if (gun.reserve === 0) {
-        if (gun.type === 'rocket') this.stowSpecial('R-80 弹药耗尽 · 换回 M-21');
+        if (gun.dryMsg && !gun.sustained) this.stowSpecial(gun.dryMsg);
         else this.game.ui.toast('备用弹药不足 · 切换武器或寻找补给');
         return;
       }
@@ -353,15 +423,15 @@
     shoot() {
       const gun = this.current;
       if (this.game.state !== 'playing' || this.reloadRemaining > 0 || this.cooldown > 0) return false;
-      if (gun.type === 'knife') return this.melee();
-      if (gun.type === 'grenade') return this.throwGrenade();
+      if (gun.fire === 'melee') return this.melee();
+      if (gun.fire === 'throw') return this.throwGrenade();
       if (gun.ammo === 0) { this.reload(); return false; }
       gun.ammo--;
       this.cooldown = gun.interval;
       this.flashRemaining = 0.045;
       this.visualKick = 1;
       // 狙击开镜：吃满精度（移动/积累散布都压到 4%），腰射保留常规散布。
-      const scoping = gun.type === 'sniper' && this.game.player.scoping;
+      const scoping = Boolean(gun.scopes) && this.game.player.scoping;
       const movingSpread = this.game.player.moving && !scoping ? 0.009 : 0;
       const spread = gun.accuracy + movingSpread + this.spread * (scoping ? 0.05 : 0.12);
       const angle = Math.random() * Math.PI * 2, radius = Math.sqrt(Math.random()) * spread;
@@ -378,7 +448,7 @@
       muzzle.getWorldPosition(this.muzzlePosition);
       this.game.effects.tracer(this.muzzlePosition, endpoint);
       this.game.effects.casing(camera);
-      if (gun.type === 'rocket') {
+      if (gun.explosive) {
         // R-80：直射命中点（或 45m 射线终点）立即起爆，2.5m 半径 450 只算敌人。
         // 命中机体时爆点落到该敌人脚下：泰坦体型躯干高出同层阈值 2.2m，用命中点会把被打中的目标自己筛掉。
         const body = hit && hit.object.userData.enemy;
@@ -388,11 +458,11 @@
         const enemy = hit.object.userData.enemy;
         const headshot = Boolean(hit.object.userData.headshot);
         // M-21：普通怪爆头一击必杀；BOSS 头倍率照旧 ×2。
-        const amount = gun.type === 'sniper' && headshot && !enemy.boss ? enemy.hp + 1 :
+        const amount = gun.headshotInstakill && headshot && !enemy.boss ? enemy.hp + 1 :
           gun.damage * (headshot ? 2 : 1);
         this.game.enemies.damage(enemy, amount, hit.point, this.ray.ray.direction, headshot, 0, gun.type);
       } else if (hit) this.game.effects.burst(hit.point, 'spark', 7);
-      this.spread = Math.min(0.14, this.spread + (gun.type === 'rifle' || gun.type === 'gatling' ? 0.018 : 0.032));
+      this.spread = Math.min(0.14, this.spread + gun.spreadStep);
       this.game.player.recoil(gun.recoil);
       this.game.audio.shot(gun.type);
       return true;
@@ -414,26 +484,23 @@
       }
       const player = this.game.player;
       // M-56 持续弹只按持枪时间走表：切回步枪不计加特林消耗。
-      if (this.special && this.current.type === 'gatling' && this.game.state === 'playing') {
+      if (this.special && this.current.sustained && this.game.state === 'playing') {
         this.specialTimer -= dt;
-        if (this.specialTimer <= 0) { this.stowSpecial('M-56 弹链打空 · 换回 M-21'); }
+        if (this.specialTimer <= 0) { this.stowSpecial(this.current.dryMsg); }
       }
       if (player.fireQueued || (player.shooting && this.current.automatic)) this.shoot();
       player.fireQueued = false;
       if (this.current.ammo === 0 && this.current.reserve > 0 && this.reloadRemaining === 0 && this.cooldown === 0) this.reload();
-      // 火箭筒弹鼓与备弹全空（装填也无法继续）时自动换回狙击枪。
-      if (this.special && this.current.type === 'rocket' && this.current.ammo === 0 &&
+      // 弹鼓与备弹全空（装填也无法继续）的特殊武器自动换回狙击枪。
+      if (this.special && this.current.dryMsg && !this.current.sustained && this.current.ammo === 0 &&
           this.current.reserve === 0 && this.reloadRemaining === 0) {
-        this.stowSpecial('R-80 弹药耗尽 · 换回 M-21');
+        this.stowSpecial(this.current.dryMsg);
       }
       // 开镜时收枪（视野交给镜筒 overlay）；倒地同样隐藏。
       this.view.visible = !player.scoping && !player.downed;
       const bob = player.moving && player.grounded ? Math.sin(player.stride) * 0.013 : Math.sin(this.game.time * 1.8) * 0.003;
       const reload = this.reloadRemaining > 0 ? Math.sin((1 - this.reloadRemaining / this.reloadDuration) * Math.PI) : 0;
-      const viewX = this.current.model === 'rifle' ? 0.26 : this.current.model === 'pistol' ? 0.22 :
-        this.current.model === 'rocket' ? 0.19 : this.current.model === 'gatling' ? 0.15 :
-        this.current.model === 'sniper' ? 0.24 : this.current.model === 'knife' ? 0.2 : 0.18;
-      this.view.position.set(viewX, -0.27 + bob - reload * 0.2 - this.switchRemaining * 0.55, -0.4 + this.visualKick * 0.055);
+      this.view.position.set(this.current.viewX, -0.27 + bob - reload * 0.2 - this.switchRemaining * 0.55, -0.4 + this.visualKick * 0.055);
       this.view.rotation.set(this.visualKick * 0.065 - reload * 0.35, -0.025, -reload * 0.35 - (player.sprinting ? 0.13 : 0));
       const gunModel = this.currentModel;
       gunModel.userData.muzzle.visible = this.flashRemaining > 0;
