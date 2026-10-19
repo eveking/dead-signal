@@ -73,7 +73,7 @@
       key: 'giant', name: '巨人城 · 30 波防守', waves: GIANT_WAVES, dataDriven: true,
       intermission: 15, waveScore: 300, noReviveBonus: 100, allowCoins: true, allowSquad: true,
       dropLife: 20, supplies: true, scoreMultiplied: true,
-      revive: { castTime: 60, health: 50, guard: 5, rallyWindow: 20 },
+      revive: { castTime: 60, health: 50, guard: 5 },
       banner: { eyebrow: 'GIANT SECTOR / 30 WAVES', title: '守住防线', subtitle: '三十波感染者 · 队友掩护 · 复活币归队' }
     },
     practice: {

@@ -110,10 +110,9 @@
       this.waveSizes = this.waveMode.waves.map(w => w.total);
     }
 
-    // F 传送目标：巨人城模式传向最近存活队友（全部阵亡返回 null，玩家侧提示）；练习模式保持岗位点。
+    // G 传送目标：优先最近存活队友（含车顶同层），全灭或练习模式回落到防守岗位点，保证永远有地方可去。
     rallyTarget() {
-      if (this.squad) return this.squad.nearestAlive(this.player.position);
-      return this.world.defensePost;
+      return (this.squad && this.squad.nearestAlive(this.player.position)) || this.world.defensePost;
     }
 
     bindEvents() {

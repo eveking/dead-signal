@@ -38,7 +38,6 @@
 .downed-copy strong{font-size:23px;font-weight:500;letter-spacing:6px}
 .downed-copy span{font-size:11px;letter-spacing:1px;color:#c8d5bd}
 .rally-chip{position:absolute;bottom:86px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:9px;padding:8px 15px;border:1px solid rgba(220,250,134,.4);background:#101c17cc;font-size:10px;letter-spacing:1.5px;color:#dbe9c9}
-.rally-chip b{font-family:var(--mono);font-weight:500;color:var(--lime)}
 .coins-panel{position:absolute;left:38px;bottom:132px;display:flex;align-items:center;gap:13px}
 .coins-panel .hud-caption{display:block}
 .coins-icon{width:35px;height:35px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(220,250,134,.4);border-radius:50%;background:#13201588;color:var(--lime);font-size:14px}

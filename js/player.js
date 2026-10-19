@@ -10,7 +10,7 @@
       this.position = new T.Vector3();
       this.keys = new Set();
       this.reset();
-      const controlKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyR', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'KeyP', 'KeyE', 'KeyF', 'Tab', 'KeyQ'];
+      const controlKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyR', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'KeyP', 'KeyE', 'Tab', 'KeyQ', 'KeyG'];
       document.addEventListener('keydown', event => {
         if (game.state !== 'playing') return;
         if (controlKeys.includes(event.code)) event.preventDefault();
@@ -25,7 +25,7 @@
         if (event.code === 'Digit5') game.weapons.switchTo(4);
         if (event.code === 'KeyP') game.pause();
         if (event.code === 'KeyE') this.tryRevive();
-        if (event.code === 'KeyF') this.tryRally();
+        if (event.code === 'KeyG') this.tryTeleport();
       });
       document.addEventListener('keyup', event => this.keys.delete(event.code));
       document.addEventListener('mousemove', event => {
@@ -66,7 +66,6 @@
       this.stagger = 0;
       this.downed = false;
       this.downedRemaining = 0;
-      this.rallyWindow = 0;
       this.scoping = false;
       this.clearInput();
     }
@@ -82,7 +81,6 @@
       this.invulnerable = Math.max(0, this.invulnerable - dt);
       if (this.downed) { this.updateDowned(dt); return; }
       this.stagger = Math.max(0, this.stagger - dt);
-      this.rallyWindow = Math.max(0, this.rallyWindow - dt);
       this.kick *= Math.exp(-9 * dt);
       let x = Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA'));
       let z = Number(this.keys.has('KeyS')) - Number(this.keys.has('KeyW'));
@@ -176,7 +174,6 @@
       this.downed = true;
       this.scoping = false;
       this.downedRemaining = config.castTime;
-      this.rallyWindow = 0;
       this.clearInput();
       this.velocityY = 0;
       game.weapons.dropSpecial();
@@ -235,28 +232,21 @@
       this.downedRemaining = 0;
       this.health = config.health;
       this.invulnerable = config.guard;
-      this.rallyWindow = config.rallyWindow;
       this.land(this.reviveSpot());
       game.weapons.view.visible = true;
       game.audio.revive();
       game.ui.showDowned(false);
-      game.ui.toast(`已消耗 1 枚复活币 · 剩余 ${game.coins} 枚 · 无敌 ${config.guard} 秒 · 按 F 归队`, 3.4);
+      game.ui.toast(`已消耗 1 枚复活币 · 剩余 ${game.coins} 枚 · 无敌 ${config.guard} 秒 · 按 G 归队`, 3.4);
     }
 
-    // F 归队传送：窗口内不限次数，每次落地重置 20 秒并重新获得无敌。
-    tryRally() {
+    // G 传送：不限时间、不限次数，任何时候都能按（卡在箱顶/死角时的逃生口）。
+    // 落点取最近存活队友身侧，无队友（练习模式）回落到防守岗位点。不刷新落地无敌：G 可连按，给无敌等于刷无敌。
+    tryTeleport() {
       const game = this.game;
       if (game.state !== 'playing' || this.downed) return;
-      if (!this.reviveConfig || !game.allowRevive) return;
-      if (this.rallyWindow <= 0) { game.ui.toast('归队传送未开启 · 需在复活点重生后的 20 秒内', 2.4); return; }
-      const target = game.rallyTarget();
-      if (!target) { game.ui.toast('没有可投奔的队友', 2); return; }
-      const config = this.reviveConfig;
-      this.land(target);
-      this.rallyWindow = config.rallyWindow;
-      this.invulnerable = config.guard;
+      this.land(game.rallyTarget());
       game.audio.teleport();
-      game.ui.toast('已传送归队 · 落地无敌 ' + config.guard + ' 秒', 2);
+      game.ui.toast('已传送归队', 1.6);
     }
   };
 })();

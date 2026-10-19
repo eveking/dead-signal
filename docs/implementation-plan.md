@@ -47,28 +47,28 @@
 对应 §4。依赖：仅需现有 48×48 图（复活点 A/B/C 先用占位坐标）。
 
 - `player.js`：倒地进入濒死读条（`revive.castTime`，现为 60 秒；2026-10-15 由 3 秒上调）（不再直接 `finish(false)`）；读条中按确认键消耗 1 币 → 前线复活点重生（波 1–9=A，10–24=B，25–30=C）+ 50 HP + 5 秒无敌（免疫伤害与击退）；币 0 或读条走完 → 失败结算（显示到达波次）。
-- F 传送：重生后 20 秒窗口（落地重置计时）内不限次数传向最近存活队友；M2 前队友不存在，先按"传向防守岗位点"实现接口，M2 接通。
-- HUD：币数计数、濒死读条环、传送窗口倒计时与可用提示；小地图高亮传送目标。
+- ~~F 传送：重生后 20 秒窗口（落地重置计时）内不限次数传向最近存活队友~~ → **2026-10-19 改版：G 传送，取消窗口与次数限制**，任意时刻可传、不花币、无冷却；M2 前队友不存在时传向"防守岗位点"，M2 接通队友。
+- HUD：币数计数、濒死读条环、传送可用提示；小地图高亮传送目标。
 - 濒死/复活/传送三组音效（`audio.js` 程序合成）。
 
 验收：~~币 5 → 死 3 次复活、第 4 次失败~~（原文自相矛盾：5 币按 1 币 1 命应为 5 次复活）→ 按"1 币=1 次复活、耗尽即失败"实现，实测币 3 → 复活 3 次、第 4 次倒地失败；币 5 → 5 次复活同样通过；3 秒读条超时=失败；硬核 0 币时倒地即失败路径正确。
 
 实现备忘（供 M2/M4 接续）：
 
-- 关键参数全部在 `DZ.WAVES.MODES.giant.revive = {castTime:3, health:50, guard:5, rallyWindow:20}`；阶段划分 `DZ.WAVES.stageForWave(wave)`（1–9=A / 10–24=B / 25–30=C）。练习模式 `revive:null` + `allowCoins:false`，整套系统在旧模式下不启用（HUD 与倒地即败保持原行为）。
-- 状态机在 `player.js`：`goDowned()` → `updateDowned()` → `tryRevive()` / `tryRally()`；`player.downed` 为真时 `damage()`、射击、移动输入全部旁路，相机降到 0.52 并倾斜 0.28 弧度。`Game.finish()` 负责清 `downed` 并隐藏遮罩。
-- **M2 接缝**：`Game.rallyTarget()` 先查 `squad.nearestAlive(pos)`，没有 squad 时回落到 `world.defensePost`。M2 只要实现 `DZ.squad.nearestAlive()` 即可把 F 传送切到队友，无需改 `player.js`。
+- 关键参数全部在 `DZ.WAVES.MODES.giant.revive = {castTime:3, health:50, guard:5}`（~~rallyWindow:20~~ 已于 2026-10-19 删除，传送不再开门窗）；阶段划分 `DZ.WAVES.stageForWave(wave)`（1–9=A / 10–24=B / 25–30=C）。练习模式 `revive:null` + `allowCoins:false`，复活系统在旧模式下不启用（HUD 与倒地即败保持原行为）；G 传送则**全模式可用**，因为它是脱困手段而非复活经济的一部分。
+- 状态机在 `player.js`：`goDowned()` → `updateDowned()` → `tryRevive()` / `tryTeleport()`（原名 `tryRally`，2026-10-19 随按键改名）；`player.downed` 为真时 `damage()`、射击、移动输入、传送全部旁路，相机降到 0.52 并倾斜 0.28 弧度。`Game.finish()` 负责清 `downed` 并隐藏遮罩。
+- **M2 接缝**：`Game.rallyTarget()` 先查 `squad.nearestAlive(pos)`，全灭或没有 squad 时回落到 `world.defensePost`（2026-10-19 改成 `||` 兜底，保证 G 永远有落点）。M2 只要实现 `DZ.squad.nearestAlive()` 即可把 G 传送切到队友，无需改 `player.js`。
 - **M4 接缝**：`world.revivePoints = {A:[两点], B:[两点], C:[两点]}` 与 `world.defensePost` 现为 48×48 占位坐标（地上青色方环标记），换 96×48 长图时只改这几个常量。`reviveSpot()` 在两点中选"最近存活敌人最远"的那个，落地前用 `world.canStand(0.42)` 微调。
-- HUD：`ui._updateRevive()` 每帧驱动 `#coins-panel`（0 币加 `.spent` 变红）、`#downed`（`--p` 驱动的 conic-gradient 读条环 + 秒数）、`#rally` chip（剩余秒数向上取整）；小地图画当前阶段复活点方框，传送窗口开启时把目标点画成荧光菱形。
+- HUD：`ui._updateRevive()` 每帧驱动 `#coins-panel`（0 币加 `.spent` 变红）、`#downed`（`--p` 驱动的 conic-gradient 读条环 + 秒数）、`#rally` chip（2026-10-19 起只要没倒地就常驻，文案改为"传送归队 · 不限次数"，`#rally-count` 倒计时节点与 `.rally-chip b` 样式一并删除）；小地图画当前阶段复活点方框，并把当前 G 落点画成荧光菱形（同样常驻）。
 - 失败结算文案：`_fillResult` 用 `game.deathWave` 输出"阵亡于第 N 波"（波次开始前的间歇里倒地不会显示 0 波）。
-- 键位：E 复活、F 归队，已加入 `controlKeys` 防止页面滚动；`index.html` 底部快捷键提示暂未加 E/F（M6 结算页统一梳理）。
+- 键位（2026-10-19 重排）：**E 复活 · G 传送归队/脱困 · Tab 选队友 · Q 切指令**（R 仍为换弹，F 空出）。`controlKeys` 含 `KeyG`；暂停面板 `modal-controls` 已补 E/G/Tab/Q 四项提示。
 
 ## M2 · 队友与仇恨（5 pd）— 已完成 2026-10-13
 
 对应 §4 小队+仇恨、§10-3/4。
 
 - `js/squad.js`（新）：3 名队友（尖刀/盾卫/游骑兵），复用敌人人形建模换色；移动走流场；射线射击复用 `weapons.js` 的挡枪检测逻辑；HP、阵亡 5 秒后复活点重生。
-- 指令状态机：守点（岗位点，追击≤10m）/ 跟随（贴玩家 4–8m）/ 自由（优先高威胁）；Tab 循环选中 + Q 切换，1.5s 生效；默认配置见 §4。
+- 指令状态机：守点（岗位点，追击≤10m）/ 跟随（贴玩家 4–8m）/ 自由（优先高威胁）；Tab 循环选中 + Q 切换（2026-10-19 传送曾想占 Q，最终让给 G，指令保持 Q），1.5s 生效；默认配置见 §4。
 - 仇恨系统：怪物目标选择（距离反比 + 伤害记忆 40 分 5s 衰减 + 玩家 bias 15）；双流场（玩家场 + 当前仇恨目标场）或按怪重路由，45 只同屏下做 0.3s 节流。
 - 队友自动拾取脚下补给；队友击杀计 60% 团队分、不计玩家爆头率。
 - HUD/小地图友军蓝点、选中框、濒死时队友靠拢 AI。
@@ -82,7 +82,7 @@
 - **多流场**：`world.fields: Map<id, {dist, clock, cell}>` + `world.updateField(id, pos, dt)` / `world.nextStep(id, pos)` / `world.resetNavigation()`；id `0..3` 为友方单位场，`'g0'..'g2'` 为队友指令目标场，均按格子变化 0.3s 节流重建。M4 换 96×48 长图只需重建 grid/字段尺寸，接口不动。
 - **岗位点**：`world.squadPosts[3]`（盾卫/游骑兵守点 + 尖刀初始位），与 `defensePost` 并列，M4 一并换成正式坐标。
 - **击杀归属**：`enemies.damage(enemy, amount, point, direction, headshot, unitId=0)`。`unitId>0` → 得分 `round(score*0.6)`、`game.squadKills++`、不计入 `kills/headshots`、不驱动玩家掉落节奏，击杀信息走 `ui.kill(false, points, '队友名 · 队友击杀')`。
-- **复活/传送接缝**：`squad.nearestAlive(pos)` 返回最近存活队友朝玩家一侧 1.3m 的落点，全灭返回 `null`（`player.tryRally()` 已按 null 提示，无需改 player.js）。队友阵亡 5 秒后按 `DZ.WAVES.stageForWave(wave)` 的复活点组重生，取离怪最远的一个并做 canStand 微调。
+- **复活/传送接缝**：`squad.nearestAlive(pos)` 返回最近存活队友朝玩家一侧 1.3m 的落点，全灭返回 `null`（2026-10-19 起由 `Game.rallyTarget()` 兜底成 `world.defensePost`，Q 不再有"没有可投奔的队友"这条死路）。队友阵亡 5 秒后按 `DZ.WAVES.stageForWave(wave)` 的复活点组重生，取离怪最远的一个并做 canStand 微调。
 - **队友经济**：`m.ammo/m.reserve` 为真实弹药（换弹从备弹转移，打空则静默），补给点 `squad.pickups()` 只吃脚下 1.1m 内且玩家 2.2m 外的掉落（医疗 +35 / 备弹 +90），波末 `squad.resupply()` 回满。M5 特殊武器箱需在此处补分支。
 - **M3 待接**：雾散体"队友命中 -50%"、裂魂者击退对队友生效、暴君横扫范围判定都要读 `game.squad.members`；击退写 `e.knock` 的现有路径不影响仇恨。
 - **冒烟实测**（28 项断言全绿，临时脚本已删）：怪流分流在波 1 采样 25 只次中 36% 咬向队友（其余按 bias 归玩家，玩家不输出时不会反超）；盾卫切"跟随"后离岗 >10m、守点仅剩游骑兵；玩家濒死时三名队友全部收进 10m 圈。
@@ -169,7 +169,7 @@ M4b 高层玩法与战场规则（2 pd）：
 - **两套导航层**：`world.nav`（地面层，M4a 那套 `canStand(x,z,0.56)` fromY 0）与 `world.navAlly = buildAllyNav()`（友方层）。友方层先按 `floorAt` 取每格台面高度 `floors[i]`，`open = canStand(NAV_RADIUS, y)`，源点 = `canStand(NAV_RADIUS, 0)`（地面本来就踩得到的格），BFS 只沿 `|Δfloor| ≤ STEP_UP` 的边扩散，因此斜坡→装载甲板→车顶是唯一的登顶链路，悬崖永远不连通。**两层都用 `NAV_RADIUS = 0.56`**（常量在 `world.js` 顶部）：旧练习图没有高度面，两层必须逐格等价，这是"两套模式共存零变化"的硬条件（实测练习图 0 格差异；巨人城地面层不可达 1203 格、友方层 443 格）。
 - **流场绑网格**：`world.field(id, grid)` 建的 `f` 带 `grid`，`updateField(id, position, dt, grid)` 与 `nextStep(id, position)` 都从 `f.grid` 取 `w/h/minX/minZ/blocked/queue/floors/maxStep`。id 约定不变：`0..3` = 怪物目标流场（nav）、`'g0'..'g2'` = 队友岗位流场（navAlly）、`'e'+targetId` = 冲顶自爆体流场（navAlly）。**边规则在两处都要守**：`updateField` 的 BFS 扩散与 `nextStep` 的梯度挑选都查 `|Δfloors| ≤ maxStep`，只在一处加会出现"隔壁格绕斜坡才够得着、梯度却指向悬崖"的假短路（实测队友会顶着甲板壁原地抖动）。
 - **`canStand` 的踩面修正（M4b 关键）**：`limit` 从 `fromY + STEP_UP` 改成 `Math.max(fromY, floorAt(x,z)) + STEP_UP`，中心格单独先判 `floorAt(x,z) > fromY + STEP_UP` 即拒。原因：斜坡每米升 0.267m，四点采样的前方 0.3m 就比脚底高 0.48m > 0.42，旧判据会把坡道当成墙，任何单位（含玩家）都上不了坡。改后语义是"先踏上目标面，再看四周有没有更高的墙"，地面单位规则不受影响——`fromY = 0` 时目标面 > 0.42 依旧直接拒，3.2m 车顶对怪物仍是墙（实测 45 同屏 60s 内冲顶以外的怪 0 只上顶、玩家 0 受击）。
-- **队友高层岗位**：`bag.squadPosts` 第三席改成 `(0, 3.2, -2)`（火车车顶，§4 游骑兵默认位），`createMember` 仍用 `settleY` 把成员放在岗位本身，所以开局游骑兵直接在车顶；`squad.moveMember` 走 `'g'+index` on navAlly，`m.goal.y = world.floorAt(goal.x, goal.z)` 让支撑面随图现算。阵亡重生后实测沿"西通道 → 南出发区 → 西斜坡 → 甲板 → 车顶"自行返岗（约 23s、路程 >15m）。**F 传送**：`squad.nearestAlive()` 现在返回带 y 的坐标（在队友侧方 1.3m 同层），`player.land()` 用 `position.y` 作 `fromY`，所以能传上 3.2m 车顶而不是掉到车厢底下。（2026-10-15 追加：该席已挪到 `(0, 3.2, -7.5)`，原因见下方"箱顶栈道"备忘。）
+- **队友高层岗位**：`bag.squadPosts` 第三席改成 `(0, 3.2, -2)`（火车车顶，§4 游骑兵默认位），`createMember` 仍用 `settleY` 把成员放在岗位本身，所以开局游骑兵直接在车顶；`squad.moveMember` 走 `'g'+index` on navAlly，`m.goal.y = world.floorAt(goal.x, goal.z)` 让支撑面随图现算。阵亡重生后实测沿"西通道 → 南出发区 → 西斜坡 → 甲板 → 车顶"自行返岗（约 23s、路程 >15m）。**G 传送**（原名 F 传送）：`squad.nearestAlive()` 现在返回带 y 的坐标（在队友侧方 1.3m 同层），`player.land()` 用 `position.y` 作 `fromY`，所以能传上 3.2m 车顶而不是掉到车厢底下。（2026-10-15 追加：该席已挪到 `(0, 3.2, -7.5)`，原因见下方"箱顶栈道"备忘。）
 - **冲顶自爆体**：`def.topRush`（只有 bomber 登记）+ `entry.group === '顶'` 才置 `e.topRush`（`spawn()` 里），非顶组投放完全不变。三处差异：移动 `world.move(p, …, e.radius, e.topRush ? p.y : 0)`（其余怪仍传 0）、寻路 `nextStep('e'+targetId)` on navAlly、选目标 `chooseTarget` 里 `u.position.y > 1.2` 时 `score += 40`（同层偏好，实测车顶队友会抢走冲顶个体的仇恨）。**判断点**：`+40` 是经验值，量级与 `nearest` 规则的 `-d` 相当，M6 复核"冲顶个体该不该优先撞高层队友而不是就近地面目标"。另外 `bomber.think` 里加了 `e.topRush && target.y - e.y > 1.6 → 不起爆`，否则冲顶个体会在坡脚对着车顶玩家提前引信（`detonate/area` 本来就有 2.2m 同层门，不会误伤地面）。
 - **BOSS 净空与战场**：净空半径沿用 M3b 的 `def.radius × entry.bossScale`（0.968 / 1.232），M4b 只重排了点位——南组 `spawnGroups['南'] = [(-6,0,30), (6,0,30)]`，巨型泰坦 `spawnPoints: ['南']` + `arenaGroup: '南'`，泰坦仍走西/东/北。`bag.bossArena = {minX:-22, maxX:22, minZ:14, maxZ:44}`（§7 决战段，南北正好 30m，含南组两点与 C 阶段复活点）；`spawn()` 只在 `entry.group === def.arenaGroup` 时挂 `e.arena`，移动后 `clamp` 到框内。**判断点**：① 测试直刷（不带 group）永远 `arena === null`，所以 tmp-m3b 的"冲刺位移 ≈16m"断言不受影响；② 玩家站在战场以北（z < 14）会把巨型泰坦钉在边界上原地打转，v1 接受（BOSS 不越界是 §7 的硬要求），M6 若要手感可改成"玩家脱离战场超过 N 秒才解除限制"。30 波数据 `groups` 已由 `['北']` 改 `['南']`，15/20 波泰坦不受限。
 - **氛围与阴影**：`buildGiantLights` 的平行光阴影取景 `46×148`（`left/right ±46, top/bottom ±74, far 160`）覆盖 96m 长图，`shadowMap.autoUpdate = false` + 换图 `needsUpdate = true`（静态复烘）；点光数组新增 `(0, 7.2, 18)` 暖色作业灯照斜坡/装载甲板。雾仍是 `FogExp2` 0.0115，`useMap` 按 bag 换 `background/fogDensity`。M5 加补给点亮光、M6 加夜景都要重烘一次。
@@ -328,6 +328,17 @@ M4b 高层玩法与战场规则（2 pd）：
 ### 打包
 
 - `DEAD-SIGNAL-单文件版.html` 行块 splice 重打：本次 12 段中 8 段替换（style/DOM/audio/player/effects/enemies/weapons/ui），three 块 FNV `40840b5` 不变、`</body>` 唯一、二次运行 12/12 MATCH（幂等），总行数 5754。打包脚本为一次性 `tests/tmp-pack.cjs`，跑完即删。
+
+## T · 传送改键 G 与不限次脱困（追加，不计入排期）— 已完成 2026-10-19
+
+起因：玩家会卡进箱顶栈道缝隙、集装箱之间、车顶等走不出来的位置，而传送被锁在"复活后 20 秒窗口"里，卡住时按 F 只得到"归队传送未开启"的 toast，等于没有自救手段。
+
+- 按键：传送 **F → G**（`player.js` 的 `controlKeys` 补 `KeyG`）；`player.tryRally()` → `player.tryTeleport()`。中途曾定在 Q，但 Q 已经是"Tab 选队友后循环指令"（`squad.js`），一次按键做两件事不可接受；R 又被换弹占着（射击游戏最高频键，不能让），所以最终落 in 空闲的 G，队友指令保持 Q。
+- 限制：**取消 `rallyWindow`**（配置字段、`player.rallyWindow` 状态、每帧递减、窗口 toast 全部删除），不限时间、不限次数、不花币、无冷却；`tryTeleport` 的门槛只剩 `state === 'playing' && !downed`，并且**去掉了 `allowRevive` 判断**，所以练习模式同样能传（脱困属性与复活经济无关）。
+- 落点：`Game.rallyTarget()` 改为 `(squad && squad.nearestAlive(pos)) || world.defensePost`，队友全灭也有地方可去；玩家侧不再有"没有可投奔的队友"分支。
+- 无敌：传送**不再刷新 `invulnerable`**（原 `config.guard` 5 秒）。理由：G 现在可连按，落地送无敌等于连按刷无敌；复活自身的 guard 秒无敌保留不变。
+- HUD：`#rally` chip 由"窗口倒计时"改为常驻提示"G 传送归队 · 不限次数"，`#rally-count` 节点、`rally-count` id 绑定与 `.rally-chip b` 样式一并删除；小地图落点菱形改为常驻（条件从 `rallyWindow > 0` 改为 `!player.downed`）；`ui.showDowned()` 里那句 `rally.hidden` 副作用删除（改由 `_updateRevive` 每帧单点决定）；暂停面板 `modal-controls` 文案更新为 E 复活 / G 传送 / Tab 选队友 / Q 切指令。
+- 回归：tmp-w 53 / tmp-m5 95（supplyCycle 医疗/弹药分支导致 95–96 浮动，非回归）/ tmp-m6 117 维持绿色；`rallyWindow` / `tryRally` 在测试与源码中已无残留引用。单文件版按行块重打，10 个数据块与 `js/` 逐块 byte 相同、style 块与 `styles.css` 相同，并在单文件页实测 G 传送 / Q 指令 / chip 文案通过。
 
 ## 里程碑外的备忘
 

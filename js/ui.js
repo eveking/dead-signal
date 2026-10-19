@@ -36,7 +36,7 @@
         'result-headshot result-coins result-coins-cell result-time result-breakdown ' +
         'result-breakdown-text result-squad-board result-squad-list result-best result-record ' +
         'menu-best menu-best-score menu-best-meta ' +
-        'downed downed-ring downed-count downed-hint rally rally-count coins-panel coins-value ' +
+        'downed downed-ring downed-count downed-hint rally coins-panel coins-value ' +
         'squad-panel squad-rows fog-veil boss-bar boss-name boss-fill boss-value scope';
       ids.split(' ').forEach((id) => { this.el[id] = document.getElementById(id); });
 
@@ -254,7 +254,6 @@
 
     showDowned(visible) {
       this.el.downed.hidden = !visible;
-      if (!visible) this.el.rally.hidden = true;
     }
 
     hit(damage, position, headshot) {
@@ -356,7 +355,7 @@
       return Math.max(1, count(number(game.totalWaves, 5)));
     }
 
-    // 复活币 / 濒死读条环 / 归队传送窗口。
+    // 复活币 / 濒死读条环 / G 传送提示条。
     _updateRevive(game, player) {
       var revive = (game.waveMode || {}).revive;
       var enabled = Boolean(revive && game.allowRevive);
@@ -376,9 +375,8 @@
         this._text('downed-hint', coins > 0 ?
           '按 E 消耗 1 枚复活币 · 在前线复活点归队' : '复活币耗尽 · 读条走完即失守');
       }
-      var rally = Math.max(0, number(player.rallyWindow, 0));
-      this.el.rally.hidden = !enabled || downed || rally <= 0;
-      if (rally > 0) this._text('rally-count', Math.ceil(rally) + ' 秒');
+      // G 传送不限模式也不限次数，只要没倒地就一直是可用状态。
+      this.el.rally.hidden = downed;
     }
 
     // 小队面板：代号 / 指令（含 1.5 秒切换倒计时）/ 血条 / 阵亡重生倒计时。
@@ -693,7 +691,7 @@
         ctx.arc(mapX(position.x), mapZ(position.z), 3.5, 0, Math.PI * 2);
         ctx.stroke();
       });
-      // 当前阶段的前线复活点；归队传送窗口开启时高亮传送目标。
+      // 当前阶段的前线复活点；G 传送随时可用，菱形始终标出当前落点。
       var stage = window.DZ && DZ.WAVES ? DZ.WAVES.stageForWave(count(this.game.wave)) : 'A';
       ctx.strokeStyle = 'rgba(127, 214, 232, 0.8)';
       ctx.lineWidth = 1.5;
@@ -703,7 +701,7 @@
       });
       ctx.lineWidth = 1;
       var player = this.game.player;
-      if (player && number(player.rallyWindow, 0) > 0 && typeof this.game.rallyTarget === 'function') {
+      if (player && !player.downed && typeof this.game.rallyTarget === 'function') {
         var target = this.game.rallyTarget();
         if (validPosition(target)) {
           var tx = mapX(target.x), tz = mapZ(target.z);
